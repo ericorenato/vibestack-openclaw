@@ -10,20 +10,30 @@ RUN apt-get update \
 
 # ============================================================
 # >>> BINÁRIOS CUSTOMIZADOS — adicione aqui suas dependências <<<
-# Cada bloco deve baixar, extrair e dar chmod +x em /usr/local/bin/<nome>.
-# Exemplos retirados do guia oficial (descomente/edite conforme precisar):
-#
- RUN curl -L https://github.com/steipete/gogcli/releases/latest/download/gogcli_linux_amd64.tar.gz \
+# Cada bloco baixa, extrai e dá chmod +x em /usr/local/bin/<nome>.
+# Os repos do openclaw incluem a versão no nome do asset, então
+# usamos ARG por binário — fácil de atualizar quando subir versão.
+# ============================================================
+
+ARG GOGCLI_VERSION=0.19.0
+ARG GOPLACES_VERSION=0.4.3
+ARG WACLI_VERSION=0.11.0
+
+# gogcli (instala como `gog`)
+RUN curl -fL "https://github.com/openclaw/gogcli/releases/download/v${GOGCLI_VERSION}/gogcli_${GOGCLI_VERSION}_linux_amd64.tar.gz" \
        | tar -xzO gog > /usr/local/bin/gog \
-  && chmod +x /usr/local/bin/gog
-#
- RUN curl -L https://github.com/steipete/goplaces/releases/latest/download/goplaces_linux_amd64.tar.gz \
+ && chmod +x /usr/local/bin/gog
+
+# goplaces
+RUN curl -fL "https://github.com/openclaw/goplaces/releases/download/v${GOPLACES_VERSION}/goplaces_${GOPLACES_VERSION}_linux_amd64.tar.gz" \
        | tar -xzO goplaces > /usr/local/bin/goplaces \
-  && chmod +x /usr/local/bin/goplaces
-#
- RUN curl -L https://github.com/steipete/wacli/releases/latest/download/wacli-linux-amd64.tar.gz \
+ && chmod +x /usr/local/bin/goplaces
+
+# wacli
+RUN curl -fL "https://github.com/openclaw/wacli/releases/download/v${WACLI_VERSION}/wacli_${WACLI_VERSION}_linux_amd64.tar.gz" \
        | tar -xzO wacli > /usr/local/bin/wacli \
-  && chmod +x /usr/local/bin/wacli
+ && chmod +x /usr/local/bin/wacli
+
 # ============================================================
 
 WORKDIR /app
