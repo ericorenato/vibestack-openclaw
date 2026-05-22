@@ -13,17 +13,17 @@ RUN apt-get update \
 # Cada bloco deve baixar, extrair e dar chmod +x em /usr/local/bin/<nome>.
 # Exemplos retirados do guia oficial (descomente/edite conforme precisar):
 #
-# RUN curl -L https://github.com/steipete/gogcli/releases/latest/download/gogcli_linux_amd64.tar.gz \
-#       | tar -xzO gog > /usr/local/bin/gog \
-#  && chmod +x /usr/local/bin/gog
+ RUN curl -L https://github.com/steipete/gogcli/releases/latest/download/gogcli_linux_amd64.tar.gz \
+       | tar -xzO gog > /usr/local/bin/gog \
+  && chmod +x /usr/local/bin/gog
 #
-# RUN curl -L https://github.com/steipete/goplaces/releases/latest/download/goplaces_linux_amd64.tar.gz \
-#       | tar -xzO goplaces > /usr/local/bin/goplaces \
-#  && chmod +x /usr/local/bin/goplaces
+ RUN curl -L https://github.com/steipete/goplaces/releases/latest/download/goplaces_linux_amd64.tar.gz \
+       | tar -xzO goplaces > /usr/local/bin/goplaces \
+  && chmod +x /usr/local/bin/goplaces
 #
-# RUN curl -L https://github.com/steipete/wacli/releases/latest/download/wacli-linux-amd64.tar.gz \
-#       | tar -xzO wacli > /usr/local/bin/wacli \
-#  && chmod +x /usr/local/bin/wacli
+ RUN curl -L https://github.com/steipete/wacli/releases/latest/download/wacli-linux-amd64.tar.gz \
+       | tar -xzO wacli > /usr/local/bin/wacli \
+  && chmod +x /usr/local/bin/wacli
 # ============================================================
 
 WORKDIR /app
