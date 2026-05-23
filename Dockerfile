@@ -5,7 +5,7 @@ ARG OPENCLAW_REPO=https://github.com/openclaw/openclaw.git
 ARG OPENCLAW_REF=main
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates curl socat \
+ && apt-get install -y --no-install-recommends git ca-certificates curl socat zstd \
  && rm -rf /var/lib/apt/lists/*
 
 # Ollama — instalado dentro da imagem (mesmo padrao de um desktop linux).
