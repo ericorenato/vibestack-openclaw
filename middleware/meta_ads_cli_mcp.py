@@ -55,8 +55,13 @@ def _run(*args: str, output_format: str = "json") -> Any:
             "cmd": " ".join(cmd),
         }
     if output_format == "json":
+        stdout = r.stdout.strip()
+        # Bug da CLI: em listas vazias devolve "No results." em vez de "[]",
+        # mesmo com --output json. Normalizamos pra lista vazia.
+        if stdout.rstrip(".").lower() == "no results":
+            return []
         try:
-            return json.loads(r.stdout)
+            return json.loads(stdout)
         except json.JSONDecodeError as e:
             return {
                 "raw": r.stdout,
