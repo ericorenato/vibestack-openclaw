@@ -17,9 +17,13 @@ Use 'none' para omitir a flag e deixar o default da CLI.
 
 Pacote oficial: https://pypi.org/project/meta-ads/  (v1.0.1, Meta).
 """
+import hashlib
 import json
 import os
 import subprocess
+import urllib.error
+import urllib.parse
+import urllib.request
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -952,6 +956,243 @@ def update_product_feed(
 def delete_product_feed(product_feed_id: str, output_format: str = "json") -> Any:
     """Deleta product feed. Sempre --force."""
     return _run("product-feed", "delete", product_feed_id, "--force", output_format=output_format)
+
+
+# ============================================================
+# Custom Audiences (Graph API direta — CLI nao suporta)
+# ============================================================
+# A `meta` CLI v1.0.1 nao tem subcomando audience. Pra cobrir Custom Audiences
+# e Lookalike Audiences, batemos direto na Graph API com o mesmo ACCESS_TOKEN.
+# Hash de PII (email/phone) eh feito localmente em SHA256 (lowercase trim),
+# conforme exigido pelo endpoint /<audience>/users do Meta.
+
+GRAPH_API_VERSION = "v22.0"
+GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
+
+
+def _graph(method: str, path: str, params: dict | None = None, body: dict | None = None) -> Any:
+    """Chama a Graph API com o ACCESS_TOKEN do env. Retorna dict parseado ou {"error", ...}."""
+    token = os.environ.get("ACCESS_TOKEN", "")
+    if not token:
+        return {"error": "ACCESS_TOKEN nao configurado no env"}
+
+    query = dict(params or {})
+    query["access_token"] = token
+    url = f"{GRAPH_BASE}{path}?{urllib.parse.urlencode(query)}"
+
+    data = None
+    headers: dict[str, str] = {}
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            err_body = {"raw": str(e)}
+        return {"error": err_body, "status": e.code, "method": method, "path": path}
+    except Exception as e:
+        return {"error": str(e), "method": method, "path": path}
+
+
+def _resolve_ad_account(ad_account_id: str | None) -> str | None:
+    """Devolve ad_account_id com prefixo 'act_' garantido. None se nao definido."""
+    aid = ad_account_id or os.environ.get("AD_ACCOUNT_ID", "")
+    if not aid:
+        return None
+    return aid if aid.startswith("act_") else f"act_{aid}"
+
+
+def _hash_value(v: str) -> str:
+    return hashlib.sha256(v.strip().lower().encode("utf-8")).hexdigest()
+
+
+def _build_users_payload(
+    emails: list[str] | None,
+    phones: list[str] | None,
+    already_hashed: bool,
+) -> Any:
+    """Monta {"payload": {"schema", "data"}} pro endpoint /<audience>/users.
+
+    Hash:
+    - email: lowercase + trim + SHA256.
+    - phone: remove caracteres nao-numericos + SHA256 (Meta espera so digitos).
+    Use already_hashed=True quando a lista ja vier pronta.
+    Retorna string com erro se inputs invalidos.
+    """
+    if not emails and not phones:
+        return "Forneca pelo menos emails ou phones"
+
+    schema: list[str] = []
+    if emails:
+        schema.append("EMAIL_SHA256")
+    if phones:
+        schema.append("PHONE_SHA256")
+
+    def _email(v: str) -> str:
+        return v.strip().lower() if already_hashed else _hash_value(v)
+
+    def _phone(v: str) -> str:
+        if already_hashed:
+            return v.strip().lower()
+        digits = "".join(c for c in v if c.isdigit())
+        return hashlib.sha256(digits.encode("utf-8")).hexdigest()
+
+    n = max(len(emails or []), len(phones or []))
+    rows: list[list[str]] = []
+    for i in range(n):
+        row: list[str] = []
+        if emails:
+            row.append(_email(emails[i]) if i < len(emails) else "")
+        if phones:
+            row.append(_phone(phones[i]) if i < len(phones) else "")
+        rows.append(row)
+
+    return {
+        "payload": {
+            "schema": schema[0] if len(schema) == 1 else schema,
+            "data": rows,
+        }
+    }
+
+
+@mcp.tool()
+def list_custom_audiences(limit: int = 50, ad_account_id: str | None = None) -> Any:
+    """Lista Custom Audiences da ad account (default: env AD_ACCOUNT_ID).
+
+    Retorna campos: id, name, subtype, description, approximate_count_lower/upper_bound,
+    delivery_status, operation_status, time_updated, retention_days.
+    """
+    aid = _resolve_ad_account(ad_account_id)
+    if not aid:
+        return {"error": "ad_account_id nao informado e AD_ACCOUNT_ID env vazio"}
+    return _graph("GET", f"/{aid}/customaudiences", params={
+        "fields": "id,name,subtype,description,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status,time_updated,retention_days",
+        "limit": limit,
+    })
+
+
+@mcp.tool()
+def get_custom_audience(audience_id: str) -> Any:
+    """Detalhes de um Custom Audience (inclui rule, lookalike_spec, time_created)."""
+    return _graph("GET", f"/{audience_id}", params={
+        "fields": "id,name,subtype,description,rule,customer_file_source,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status,time_created,time_updated,retention_days,lookalike_spec,opt_out_link",
+    })
+
+
+@mcp.tool()
+def create_custom_audience(
+    name: str,
+    subtype: str = "CUSTOM",
+    description: str | None = None,
+    customer_file_source: str = "USER_PROVIDED_ONLY",
+    retention_days: int = 180,
+    ad_account_id: str | None = None,
+) -> Any:
+    """Cria um Custom Audience.
+
+    subtype: CUSTOM (user list, default) | WEBSITE | APP | ENGAGEMENT |
+             OFFLINE_CONVERSION | VIDEO | DATA_SET. Pra LOOKALIKE use
+             create_lookalike_audience.
+    customer_file_source: USER_PROVIDED_ONLY (default — voce coletou os dados) |
+                          PARTNER_PROVIDED_ONLY | BOTH_USER_AND_PARTNER_PROVIDED.
+    retention_days: 1 a 540. Usuarios removidos automaticamente apos esse periodo.
+
+    Apos criar, popule com add_users_to_audience.
+    """
+    aid = _resolve_ad_account(ad_account_id)
+    if not aid:
+        return {"error": "ad_account_id nao informado e AD_ACCOUNT_ID env vazio"}
+    body: dict[str, Any] = {
+        "name": name,
+        "subtype": subtype,
+        "customer_file_source": customer_file_source,
+        "retention_days": retention_days,
+    }
+    if description:
+        body["description"] = description
+    return _graph("POST", f"/{aid}/customaudiences", body=body)
+
+
+@mcp.tool()
+def create_lookalike_audience(
+    name: str,
+    source_audience_id: str,
+    country: str,
+    ratio: float = 0.01,
+    description: str | None = None,
+    ad_account_id: str | None = None,
+) -> Any:
+    """Cria um Lookalike Audience a partir de um Custom Audience existente.
+
+    source_audience_id: ID do audience-base (>= 100 usuarios entregaveis).
+    country: ISO 2 letras ('BR', 'US', 'PT'...).
+    ratio: 0.01 a 0.20. 0.01 = 1% mais similar (preciso, audiencia pequena),
+           0.20 = 20% (amplo, menos preciso).
+    """
+    aid = _resolve_ad_account(ad_account_id)
+    if not aid:
+        return {"error": "ad_account_id nao informado e AD_ACCOUNT_ID env vazio"}
+    body: dict[str, Any] = {
+        "name": name,
+        "subtype": "LOOKALIKE",
+        "origin_audience_id": source_audience_id,
+        "lookalike_spec": json.dumps({
+            "type": "similarity",
+            "country": country,
+            "ratio": ratio,
+        }),
+    }
+    if description:
+        body["description"] = description
+    return _graph("POST", f"/{aid}/customaudiences", body=body)
+
+
+@mcp.tool()
+def add_users_to_audience(
+    audience_id: str,
+    emails: list[str] | None = None,
+    phones: list[str] | None = None,
+    already_hashed: bool = False,
+) -> Any:
+    """Adiciona usuarios a um Custom Audience (subtype=CUSTOM).
+
+    Hash automatico SHA256 (lowercase + trim pra email; so digitos pra phone)
+    a menos que already_hashed=True. Meta exige hash; nao envie PII em claro.
+
+    Batch maximo recomendado: 10000 por chamada. Pra listas maiores, chame
+    multiplas vezes.
+    """
+    payload = _build_users_payload(emails, phones, already_hashed)
+    if isinstance(payload, str):
+        return {"error": payload}
+    return _graph("POST", f"/{audience_id}/users", body=payload)
+
+
+@mcp.tool()
+def remove_users_from_audience(
+    audience_id: str,
+    emails: list[str] | None = None,
+    phones: list[str] | None = None,
+    already_hashed: bool = False,
+) -> Any:
+    """Remove usuarios de um Custom Audience. Mesma assinatura de add_users_to_audience."""
+    payload = _build_users_payload(emails, phones, already_hashed)
+    if isinstance(payload, str):
+        return {"error": payload}
+    return _graph("DELETE", f"/{audience_id}/users", body=payload)
+
+
+@mcp.tool()
+def delete_custom_audience(audience_id: str) -> Any:
+    """Deleta um Custom Audience. DESTRUTIVO. Ad sets que dependem dele param de entregar."""
+    return _graph("DELETE", f"/{audience_id}")
 
 
 if __name__ == "__main__":

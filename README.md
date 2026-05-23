@@ -344,7 +344,7 @@ Sugestões por tamanho:
 
 ### Tools do MCP Meta Ads
 
-60 tools cobrindo 11 grupos da CLI oficial `meta-ads`:
+67 tools no total: 60 envelopando a CLI oficial `meta-ads` + 7 chamando direto a Graph API pra Custom Audiences (a CLI v1.0.1 não cobre audiences).
 
 - **Ad Accounts**: `list_ad_accounts`, `get_ad_account`, `current_ad_account`
 - **Campaigns**: `list_campaigns`, `get_campaign`, `create_campaign`, `update_campaign`, `pause_campaign`, `resume_campaign`, `archive_campaign`, `delete_campaign`
@@ -358,8 +358,9 @@ Sugestões por tamanho:
 - **Product Sets**: `list_product_sets`, `get_product_set`, `create_product_set`, `update_product_set`, `delete_product_set`
 - **Product Items**: `list_product_items`, `get_product_item`, `create_product_item`, `update_product_item`, `delete_product_item`
 - **Product Feeds**: `list_product_feeds`, `get_product_feed`, `create_product_feed`, `update_product_feed`, `delete_product_feed`
+- **Custom Audiences** (Graph API direta, não passa pela CLI): `list_custom_audiences`, `get_custom_audience`, `create_custom_audience`, `create_lookalike_audience`, `add_users_to_audience`, `remove_users_from_audience`, `delete_custom_audience`
 
-Todas aceitam `output_format` (`json` default | `table` | `plain` | `none`). Todos os `create_*` partem com `status="paused"` por segurança.
+Todas as tools que envelopam a CLI aceitam `output_format` (`json` default | `table` | `plain` | `none`). Todos os `create_*` partem com `status="paused"` por segurança. As tools de audience hasham email/phone localmente em SHA256 antes de enviar (Meta exige PII hasheada) — use `already_hashed=True` se a lista já vier pronta.
 
 ### Adicionar uma CLI nova à imagem
 
