@@ -40,7 +40,9 @@ def _run(*args: str, output_format: str = "json") -> Any:
         (string), sem parsing. Use quando o JSON estiver quebrado.
       - 'none' ou '': omite --output (default da CLI = table).
     """
-    cmd = [CLI]
+    # --no-color: evita ANSI sujando o JSON quando stdout nao eh TTY (subprocess).
+    # --no-input: desabilita prompts interativos (MCP nao tem como responder).
+    cmd = [CLI, "--no-color", "--no-input"]
     if output_format and output_format != "none":
         cmd += ["--output", output_format]
     cmd += ["ads", *args]
