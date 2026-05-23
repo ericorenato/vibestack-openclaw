@@ -6,8 +6,6 @@ services:
       args:
         OPENCLAW_REF: ${OPENCLAW_REF:-main}
     restart: unless-stopped
-    depends_on:
-      - ollama
     env_file:
       - .env
     environment:
@@ -19,13 +17,17 @@ services:
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - GOG_KEYRING_PASSWORD=${GOG_KEYRING_PASSWORD}
       - XDG_CONFIG_HOME=${XDG_CONFIG_HOME}
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_MODELS=/var/lib/ollama
       - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${OLLAMA_DATA_DIR}:/var/lib/ollama
     ports:
       - "127.0.0.1:${OPENCLAW_GATEWAY_PORT}:18789"
+      # Loopback do host pra alcancar o ollama interno (opcional, SSH tunnel):
+      #   ssh -N -L 11434:127.0.0.1:11434 root@VPS
+      - "127.0.0.1:11434:11434"
     command:
       - "openclaw"
       - "gateway"
@@ -34,13 +36,3 @@ services:
       - "--port"
       - "${OPENCLAW_GATEWAY_PORT}"
       - "--allow-unconfigured"
-
-  ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
-    restart: unless-stopped
-    volumes:
-      - ${OLLAMA_DATA_DIR}:/root/.ollama
-    # Loopback do host — permite acessar ollama do laptop via SSH tunnel:
-    #   ssh -N -L 11434:127.0.0.1:11434 root@VPS
-    ports:
-      - "127.0.0.1:11434:11434"

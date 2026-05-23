@@ -8,6 +8,15 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates curl socat \
  && rm -rf /var/lib/apt/lists/*
 
+# Ollama — instalado dentro da imagem (mesmo padrao de um desktop linux).
+# O script oficial baixa o binario, instala em /usr/local/bin/ollama e tenta
+# criar servico systemd (passo ignorado em container, nao falha).
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+# Pasta persistente dos modelos — montada como volume pelo compose.
+ENV OLLAMA_MODELS=/var/lib/ollama
+RUN mkdir -p /var/lib/ollama
+
 # ============================================================
 # >>> BINÁRIOS CUSTOMIZADOS — adicione aqui suas dependências <<<
 # Cada bloco baixa, extrai e dá chmod +x em /usr/local/bin/<nome>.
@@ -53,7 +62,12 @@ RUN corepack enable \
 RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/openclaw \
  && chmod +x /usr/local/bin/openclaw
 
+# Entrypoint: sobe `ollama serve` em background e exec o CMD (openclaw).
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 ENV NODE_ENV=production
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["openclaw"]
