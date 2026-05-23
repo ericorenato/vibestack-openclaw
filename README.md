@@ -206,7 +206,9 @@ O `docker-compose.yml` injeta esses dois como `ACCESS_TOKEN` e `AD_ACCOUNT_ID` (
 
 ### Registro no openclaw.json (automático — Infrastructure as Code)
 
-A entrada `mcpServers.meta-ads` já está no template versionado em [`config/openclaw.json`](config/openclaw.json). No primeiro boot do container, o `entrypoint.sh` copia esse template para `/home/node/.openclaw/openclaw.json` (= `/root/.openclaw/openclaw.json` no host via volume). **Nada a editar manualmente.**
+A entrada `mcp.servers.meta-ads` já está no template versionado em [`config/openclaw.json`](config/openclaw.json). No primeiro boot do container, o `entrypoint.sh` copia esse template para `/home/node/.openclaw/openclaw.json` (= `/root/.openclaw/openclaw.json` no host via volume). **Nada a editar manualmente.**
+
+> **Schema correto:** openclaw espera `mcp.servers.{nome}` (aninhado), **não** `mcpServers` top-level. Se preferir registrar via CLI sem editar JSON: `openclaw mcp set <nome> '<json>'`.
 
 Comportamento:
 - **Arquivo não existe** → entrypoint seedará do template.
