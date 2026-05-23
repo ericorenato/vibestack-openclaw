@@ -1,0 +1,18 @@
+// Template versionado de config do OpenClaw — seedado pelo entrypoint
+// em /home/node/.openclaw/openclaw.json no primeiro boot.
+//
+// Edicoes manuais no host SAO PRESERVADAS em boots subsequentes.
+// Para forcar re-seed (descartando customizacoes), defina
+// OPENCLAW_CONFIG_OVERWRITE=true no .env.
+//
+// Arquivo e' JSON5 — comentarios e virgulas finais sao OK.
+{
+  "mcpServers": {
+    // Meta Ads — middleware Python envelopando a CLI oficial 'meta'.
+    // Token e ad account vem do env do container (ACCESS_TOKEN, AD_ACCOUNT_ID).
+    "meta-ads": {
+      "command": "/opt/middleware-venv/bin/python",
+      "args": ["/app/middleware/meta_ads_cli_mcp.py"]
+    }
+  }
+}

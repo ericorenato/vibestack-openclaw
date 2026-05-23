@@ -81,6 +81,9 @@ RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/ope
 # Middleware MCP que envelopa a CLI 'meta' como tools tipados para o openclaw.
 COPY middleware /app/middleware
 
+# Template versionado do openclaw.json — seedado pelo entrypoint no first boot.
+COPY config /opt/openclaw-config
+
 # Entrypoint: sobe `ollama serve` em background e exec o CMD (openclaw).
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

@@ -1,12 +1,32 @@
 #!/bin/sh
-# Inicia o ollama em background e em seguida executa o comando principal
-# (por default `openclaw`, mas o compose sobrescreve com `openclaw gateway ...`).
+# Entrypoint:
+#  1) Seed do openclaw.json a partir do template versionado (first-boot, ou
+#     forcado por OPENCLAW_CONFIG_OVERWRITE=true).
+#  2) Sobe ollama serve em background.
+#  3) Executa o comando principal (compose passa 'openclaw gateway ...').
 set -e
 
+# --- Seed do openclaw.json (Infrastructure as Code) -----------------------
+TEMPLATE=/opt/openclaw-config/openclaw.json
+CONFIG_DIR=/home/node/.openclaw
+CONFIG="$CONFIG_DIR/openclaw.json"
+
+mkdir -p "$CONFIG_DIR"
+if [ ! -f "$CONFIG" ]; then
+  cp "$TEMPLATE" "$CONFIG"
+  echo "[entrypoint] seeded $CONFIG a partir do template versionado"
+elif [ "${OPENCLAW_CONFIG_OVERWRITE:-false}" = "true" ]; then
+  cp "$CONFIG" "$CONFIG.bak.$(date +%s)" 2>/dev/null || true
+  cp "$TEMPLATE" "$CONFIG"
+  echo "[entrypoint] OPENCLAW_CONFIG_OVERWRITE=true — re-seeded $CONFIG (backup .bak.* salvo)"
+else
+  echo "[entrypoint] $CONFIG ja existe — preservando edicoes manuais"
+fi
+
+# --- Ollama em background --------------------------------------------------
 ollama serve >/var/log/ollama.log 2>&1 &
 OLLAMA_PID=$!
 
-# Aguarda ollama responder em 127.0.0.1:11434 (timeout 30s)
 for i in $(seq 1 30); do
   if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
     echo "[entrypoint] ollama pronto (pid=$OLLAMA_PID)"

@@ -23,6 +23,9 @@ services:
       - ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      # Se true, entrypoint sobrescreve /home/node/.openclaw/openclaw.json
+      # com o template versionado (backup .bak.* salvo). Default: preserva.
+      - OPENCLAW_CONFIG_OVERWRITE=${OPENCLAW_CONFIG_OVERWRITE:-false}
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw

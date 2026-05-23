@@ -12,10 +12,15 @@ O source do openclaw **não é versionado aqui** — o `Dockerfile` faz `git clo
 
 ```
 .
-├── Dockerfile          # node:24-bookworm + clone do openclaw + ollama + binarios extras + wrapper `openclaw`
-├── entrypoint.sh       # Sobe `ollama serve` em background e exec o comando principal
-├── docker-compose.yml  # Servico unico openclaw-gateway (porta 18789 + 11434 loopback)
-├── .env.example        # Variaveis de ambiente — copiar para .env
+├── Dockerfile               # node:24-bookworm + openclaw + ollama + meta-ads + middleware
+├── entrypoint.sh            # Seed do openclaw.json + ollama serve em background + exec CMD
+├── docker-compose.yml       # Servico unico openclaw-gateway (porta 18789 + 11434 loopback)
+├── config/
+│   └── openclaw.json        # Template versionado da config do openclaw (IaC)
+├── middleware/
+│   ├── meta_ads_cli_mcp.py  # MCP server Python envelopando a CLI 'meta'
+│   └── requirements.txt
+├── .env.example
 ├── .gitignore
 └── README.md
 ```
@@ -199,29 +204,23 @@ nano .env
 
 O `docker-compose.yml` injeta esses dois como `ACCESS_TOKEN` e `AD_ACCOUNT_ID` (nomes que a CLI espera).
 
-### Registrar no openclaw.json
+### Registro no openclaw.json (automático — Infrastructure as Code)
 
-O arquivo `openclaw.json` fica em `${OPENCLAW_CONFIG_DIR}/openclaw.json` no host (default `/root/.openclaw/openclaw.json`). Adicione/mescle:
+A entrada `mcpServers.meta-ads` já está no template versionado em [`config/openclaw.json`](config/openclaw.json). No primeiro boot do container, o `entrypoint.sh` copia esse template para `/home/node/.openclaw/openclaw.json` (= `/root/.openclaw/openclaw.json` no host via volume). **Nada a editar manualmente.**
 
-```json5
-{
-  "mcpServers": {
-    "meta-ads": {
-      "command": "/opt/middleware-venv/bin/python",
-      "args": ["/app/middleware/meta_ads_cli_mcp.py"]
-    }
-  }
-}
-```
+Comportamento:
+- **Arquivo não existe** → entrypoint seedará do template.
+- **Arquivo já existe** → entrypoint **preserva** (sua edição manual ganha).
+- **Quer forçar re-seed** → no `.env`: `OPENCLAW_CONFIG_OVERWRITE=true`, restart. Um backup `.bak.<timestamp>` do anterior fica salvo no mesmo diretório.
 
-O subprocesso herda `ACCESS_TOKEN`/`AD_ACCOUNT_ID` do container — nada de `env:` no JSON.
+Para acrescentar outros MCP servers no futuro: edita `config/openclaw.json` no repo, commit, pull na VPS, e ou (a) deleta `/root/.openclaw/openclaw.json` antes do restart, ou (b) liga `OPENCLAW_CONFIG_OVERWRITE=true` no `.env`.
 
 ### Aplicar
 
 ```bash
 docker compose build
 docker compose up -d --force-recreate openclaw-gateway
-docker compose logs -f openclaw-gateway | grep -i "mcp\|meta-ads"
+docker compose logs -f openclaw-gateway | grep -iE "mcp|meta-ads|seeded"
 ```
 
 Tools disponíveis para o agente: `list_ad_accounts`, `get_ad_account`, `current_ad_account`, `list_campaigns`, `get_campaign`, `create_campaign`, `delete_campaign`, `list_ad_sets`, `get_ad_set`, `list_ads`, `get_ad`, `list_creatives`, `get_creative`, `get_insights`, `list_catalogs`, `list_pages`.
