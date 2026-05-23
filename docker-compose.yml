@@ -40,8 +40,7 @@ services:
     restart: unless-stopped
     volumes:
       - ${OLLAMA_DATA_DIR}:/root/.ollama
-    # Sem `ports:` por padrão — só alcançável de dentro da rede do compose,
-    # via http://ollama:11434. Descomente abaixo se quiser acessar do host
-    # (ex: ssh -N -L 11434:127.0.0.1:11434 root@VPS).
-    # ports:
-    #   - "127.0.0.1:11434:11434"
+    # Loopback do host — permite acessar ollama do laptop via SSH tunnel:
+    #   ssh -N -L 11434:127.0.0.1:11434 root@VPS
+    ports:
+      - "127.0.0.1:11434:11434"
