@@ -8,9 +8,21 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates curl socat zstd python3 python3-pip \
  && rm -rf /var/lib/apt/lists/*
 
-# Meta Ads MCP server (Marketing API embrulhada em protocolo MCP).
-# Le META_ACCESS_TOKEN do env do processo openclaw — basta ter no compose/.env.
-RUN pip3 install --break-system-packages --no-cache-dir meta-ads-mcp
+# uv: instala Python 3.12 inline (bookworm so traz ate 3.11).
+RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
+ && ln -sf /root/.local/bin/uv /usr/local/bin/uv \
+ && ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
+
+# Meta Ads CLI oficial (pacote 'meta-ads' no PyPI, publicado por Meta em 2026-04-29).
+# Instala em venv isolado gerenciado por uv; binario fica em /root/.local/bin/meta.
+RUN uv tool install --python 3.12 meta-ads
+
+# Python SDK do MCP para o middleware customizado (middleware/meta_ads_cli_mcp.py).
+# Instalamos no mesmo Python 3.12 do uv via venv compartilhado.
+RUN uv venv --python 3.12 /opt/middleware-venv \
+ && /opt/middleware-venv/bin/pip install --no-cache-dir "mcp>=1.0"
+
+ENV PATH=/root/.local/bin:$PATH
 
 # Ollama — instalado dentro da imagem (mesmo padrao de um desktop linux).
 # O script oficial baixa o binario, instala em /usr/local/bin/ollama e tenta
@@ -65,6 +77,9 @@ RUN corepack enable \
 # Wrapper para usar `openclaw <comando>` em vez de `node dist/index.js <comando>`
 RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/openclaw \
  && chmod +x /usr/local/bin/openclaw
+
+# Middleware MCP que envelopa a CLI 'meta' como tools tipados para o openclaw.
+COPY middleware /app/middleware
 
 # Entrypoint: sobe `ollama serve` em background e exec o CMD (openclaw).
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

@@ -157,58 +157,86 @@ curl http://127.0.0.1:11434/api/tags   # do laptop
 
 ---
 
-## 5) Meta Ads MCP server
+## 5) Meta Ads — CLI oficial + middleware MCP
 
-A imagem inclui o [`meta-ads-mcp`](https://github.com/pipeboard-co/meta-ads-mcp) (PyPI, BUSL-1.1) instalado via `pip3`. Ele expõe a Marketing API da Meta como ferramentas MCP que o openclaw pode chamar.
+A imagem inclui a [**Meta Ads CLI oficial**](https://developers.facebook.com/blog/post/2026/04/29/introducing-ads-cli/) (pacote [`meta-ads`](https://pypi.org/project/meta-ads/) no PyPI, publicado pela Meta) instalada via [`uv`](https://docs.astral.sh/uv/) com Python 3.12 isolado, mais um **middleware MCP customizado** em `middleware/meta_ads_cli_mcp.py` que expõe a CLI como tools tipados para o openclaw.
+
+Por que CLI + middleware (e não o MCP oficial em `mcp.facebook.com/ads`)? O MCP oficial só aceita OAuth de clientes whitelisted (claude.ai, Claude Desktop, ChatGPT, Cursor) — agente self-hosted não passa. A CLI oficial aceita autenticação por env var (System User Token), e o middleware traduz cada subcomando da CLI em um tool MCP nomeado.
 
 ### Gerar o System User Token (uma vez só, no navegador)
 
-1. **Criar um Meta Developer App** em https://developers.facebook.com/apps → Create App → tipo **Business** → adicionar produto **Marketing API**. Anote `App ID` e `App Secret`.
-2. **Adicionar o App ao Business Manager**: https://business.facebook.com → Business Settings → Accounts → Apps → Add → escolher o app que você criou.
-3. **Criar System User**: Business Settings → Users → System Users → Add. Role: **Admin** (ou Employee).
-4. **Atribuir Ad Accounts** ao system user: Business Settings → Accounts → Ad Accounts → escolher conta → Add People → selecionar o system user → permissão **Manage campaigns**.
-5. **Atribuir o App** ao system user: System Users → seu user → Add Assets → Apps → seu app → permissão **Develop App**.
-6. **Gerar token**: System Users → seu user → Generate New Token → escolher seu app → escopos `ads_read` + `ads_management` → Generate. **Copie o token agora** (não dá pra ver depois). System User tokens **não expiram**.
+1. **Criar um Meta Developer App** em https://developers.facebook.com/apps → Create App → tipo **Business** → adicionar produto **Marketing API**.
+2. **Adicionar o App ao Business Manager** (business.facebook.com → Business Settings → Accounts → Apps).
+3. **Criar System User** (Business Settings → Users → System Users → Add, role Admin).
+4. **Atribuir Ad Accounts** ao system user com permissão Manage campaigns.
+5. **Atribuir o App** ao system user com permissão Develop App.
+6. **Generate New Token** → escolhe seu App → escopos `ads_read` + `ads_management` → Generate. **Copia o token**. Não expira.
 
-### Colocar o token no `.env` da VPS
+### Configurar `.env`
 
 ```bash
-cd ~/openclaw   # ou ~/vibestack-openclaw
+cd ~/vibestack-openclaw
 nano .env
-# adicione/edite a linha:
-# META_ACCESS_TOKEN=EAAxxxxx... (o token do passo 6)
+# preencher:
+# META_ACCESS_TOKEN=EAAxxxxx...
+# META_AD_ACCOUNT_ID=act_123456789   # opcional — agente descobre via list_ad_accounts
 ```
+
+O `docker-compose.yml` injeta esses dois como `ACCESS_TOKEN` e `AD_ACCOUNT_ID` (nomes que a CLI espera).
 
 ### Registrar no openclaw.json
 
-O arquivo `openclaw.json` fica em `${OPENCLAW_CONFIG_DIR}/openclaw.json` no host (default `/root/.openclaw/openclaw.json`). Adicione/mescle a seção `mcpServers`:
+O arquivo `openclaw.json` fica em `${OPENCLAW_CONFIG_DIR}/openclaw.json` no host (default `/root/.openclaw/openclaw.json`). Adicione/mescle:
 
 ```json5
 {
-  // ... outras configs do openclaw ...
   "mcpServers": {
     "meta-ads": {
-      "command": "meta-ads-mcp"
-      // sem `env:` aqui — o subprocesso herda META_ACCESS_TOKEN do container
+      "command": "/opt/middleware-venv/bin/python",
+      "args": ["/app/middleware/meta_ads_cli_mcp.py"]
     }
   }
 }
 ```
 
+O subprocesso herda `ACCESS_TOKEN`/`AD_ACCOUNT_ID` do container — nada de `env:` no JSON.
+
 ### Aplicar
 
 ```bash
-docker compose up -d --force-recreate openclaw-gateway   # pra pegar a env nova
-docker compose logs -f openclaw-gateway | grep -i mcp    # deve aparecer "meta-ads" na lista de mcp servers
+docker compose build
+docker compose up -d --force-recreate openclaw-gateway
+docker compose logs -f openclaw-gateway | grep -i "mcp\|meta-ads"
 ```
 
-Dentro da UI do openclaw o agente passa a ter ferramentas tipo `ads_get_ad_accounts`, `ads_create_campaign`, `ads_insights_*` etc.
+Tools disponíveis para o agente: `list_ad_accounts`, `get_ad_account`, `current_ad_account`, `list_campaigns`, `get_campaign`, `create_campaign`, `delete_campaign`, `list_ad_sets`, `get_ad_set`, `list_ads`, `get_ad`, `list_creatives`, `get_creative`, `get_insights`, `list_catalogs`, `list_pages`.
 
 ### Testar isolado
 
 ```bash
-docker compose exec openclaw-gateway sh -c 'META_ACCESS_TOKEN=$META_ACCESS_TOKEN meta-ads-mcp --help'
+# CLI responde?
+docker compose exec openclaw-gateway meta --version
+docker compose exec openclaw-gateway meta ads --help
+
+# Smoke test com o token
+docker compose exec openclaw-gateway sh -c 'meta ads adaccount list --output json'
+
+# Middleware (Ctrl+C pra sair — ele espera stdio)
+docker compose exec openclaw-gateway /opt/middleware-venv/bin/python /app/middleware/meta_ads_cli_mcp.py
 ```
+
+### Adicionar ou customizar tools
+
+Edite `middleware/meta_ads_cli_mcp.py`, replicando o padrão:
+
+```python
+@mcp.tool()
+def nome_do_tool(arg1: str, arg2: int = 10) -> Any:
+    """Descrição que o agente vai ler para decidir quando chamar."""
+    return _run("subcomando", "operacao", "--flag", arg1, "--n", str(arg2))
+```
+
+Commit + push + `docker compose build` + `docker compose up -d --force-recreate`.
 
 ---
 
