@@ -10,6 +10,11 @@ do env do container openclaw-gateway.
 
 Deletes sempre passam --force (MCP não tem prompt interativo).
 
+Formato de saída: cada tool aceita `output_format` (default 'json'). Quando o
+JSON da CLI vem quebrado/incompatível, passe 'table', 'csv', 'yaml', 'text'
+(o que a CLI suportar) e o wrapper devolve a string crua sem tentar parsear.
+Use 'none' para omitir a flag e deixar o default da CLI.
+
 Pacote oficial: https://pypi.org/project/meta-ads/  (v1.0.1, Meta).
 """
 import json
@@ -22,16 +27,36 @@ mcp = FastMCP("meta-ads-cli")
 CLI = "meta"
 
 
-def _run(*args: str) -> Any:
-    """Executa `meta ads <args> --output json`. Devolve dict/list ou erro estruturado."""
-    cmd = [CLI, "ads", *args, "--output", "json"]
+def _run(*args: str, output_format: str = "json") -> Any:
+    """Executa `meta ads <args>`. Formato de saída configurável.
+
+    output_format:
+      - 'json' (default): adiciona --output json e parseia o stdout.
+        Em falha de parse, devolve dict com 'raw', 'parse_error' e 'hint'.
+      - 'table' | 'csv' | 'yaml' | 'text' | ...: passa direto pra CLI e devolve
+        o stdout cru (string), sem parsing. Use quando o JSON estiver quebrado.
+      - 'none' ou '': omite --output (usa default da CLI).
+    """
+    cmd = [CLI, "ads", *args]
+    if output_format and output_format != "none":
+        cmd += ["--output", output_format]
     r = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if r.returncode != 0:
-        return {"error": r.stderr.strip() or f"exit {r.returncode}", "cmd": " ".join(cmd)}
-    try:
-        return json.loads(r.stdout)
-    except json.JSONDecodeError:
-        return {"raw": r.stdout}
+        return {
+            "error": r.stderr.strip() or f"exit {r.returncode}",
+            "stdout": r.stdout,
+            "cmd": " ".join(cmd),
+        }
+    if output_format == "json":
+        try:
+            return json.loads(r.stdout)
+        except json.JSONDecodeError as e:
+            return {
+                "raw": r.stdout,
+                "parse_error": f"JSON inválido: {e.msg} (linha {e.lineno}, col {e.colno})",
+                "hint": "Tente output_format='table' ou 'text' pra pular o parsing.",
+            }
+    return r.stdout
 
 
 def _flags(**kwargs: Any) -> list[str]:
@@ -62,21 +87,21 @@ def _flags(**kwargs: Any) -> list[str]:
 # ============================================================
 
 @mcp.tool()
-def list_ad_accounts() -> Any:
+def list_ad_accounts(output_format: str = "json") -> Any:
     """Lista todas as ad accounts acessíveis pelo ACCESS_TOKEN."""
-    return _run("adaccount", "list")
+    return _run("adaccount", "list", output_format=output_format)
 
 
 @mcp.tool()
-def get_ad_account(ad_account_id: str) -> Any:
+def get_ad_account(ad_account_id: str, output_format: str = "json") -> Any:
     """Detalhes de uma ad account. Formato: 'act_123456789'."""
-    return _run("adaccount", "get", ad_account_id)
+    return _run("adaccount", "get", ad_account_id, output_format=output_format)
 
 
 @mcp.tool()
-def current_ad_account() -> Any:
+def current_ad_account(output_format: str = "json") -> Any:
     """Ad account ativa (definida em AD_ACCOUNT_ID env)."""
-    return _run("adaccount", "current")
+    return _run("adaccount", "current", output_format=output_format)
 
 
 # ============================================================
@@ -84,15 +109,15 @@ def current_ad_account() -> Any:
 # ============================================================
 
 @mcp.tool()
-def list_campaigns() -> Any:
+def list_campaigns(output_format: str = "json") -> Any:
     """Lista campanhas da ad account ativa."""
-    return _run("campaign", "list")
+    return _run("campaign", "list", output_format=output_format)
 
 
 @mcp.tool()
-def get_campaign(campaign_id: str) -> Any:
+def get_campaign(campaign_id: str, output_format: str = "json") -> Any:
     """Detalhes de uma campanha."""
-    return _run("campaign", "get", campaign_id)
+    return _run("campaign", "get", campaign_id, output_format=output_format)
 
 
 @mcp.tool()
@@ -103,6 +128,7 @@ def create_campaign(
     lifetime_budget_cents: int | None = None,
     status: str = "paused",
     adset_budget_sharing: bool = False,
+    output_format: str = "json",
 ) -> Any:
     """Cria uma campanha. Default: PAUSED (para não gastar acidentalmente).
 
@@ -121,6 +147,7 @@ def create_campaign(
             status=status,
             adset_budget_sharing=adset_budget_sharing,
         ),
+        output_format=output_format,
     )
 
 
@@ -131,6 +158,7 @@ def update_campaign(
     status: str | None = None,
     daily_budget_cents: int | None = None,
     lifetime_budget_cents: int | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Atualiza campanha. status: active | paused | archived."""
     return _run(
@@ -141,31 +169,32 @@ def update_campaign(
             daily_budget=daily_budget_cents,
             lifetime_budget=lifetime_budget_cents,
         ),
+        output_format=output_format,
     )
 
 
 @mcp.tool()
-def pause_campaign(campaign_id: str) -> Any:
+def pause_campaign(campaign_id: str, output_format: str = "json") -> Any:
     """Pausa campanha (status -> paused). Atalho pra update_campaign."""
-    return _run("campaign", "update", campaign_id, "--status", "paused")
+    return _run("campaign", "update", campaign_id, "--status", "paused", output_format=output_format)
 
 
 @mcp.tool()
-def resume_campaign(campaign_id: str) -> Any:
+def resume_campaign(campaign_id: str, output_format: str = "json") -> Any:
     """Reativa campanha (status -> active). Atalho pra update_campaign."""
-    return _run("campaign", "update", campaign_id, "--status", "active")
+    return _run("campaign", "update", campaign_id, "--status", "active", output_format=output_format)
 
 
 @mcp.tool()
-def archive_campaign(campaign_id: str) -> Any:
+def archive_campaign(campaign_id: str, output_format: str = "json") -> Any:
     """Arquiva campanha (status -> archived)."""
-    return _run("campaign", "update", campaign_id, "--status", "archived")
+    return _run("campaign", "update", campaign_id, "--status", "archived", output_format=output_format)
 
 
 @mcp.tool()
-def delete_campaign(campaign_id: str) -> Any:
+def delete_campaign(campaign_id: str, output_format: str = "json") -> Any:
     """Deleta campanha (e todos ad sets/ads filhos). DESTRUTIVO. Sempre --force."""
-    return _run("campaign", "delete", campaign_id, "--force")
+    return _run("campaign", "delete", campaign_id, "--force", output_format=output_format)
 
 
 # ============================================================
@@ -173,18 +202,18 @@ def delete_campaign(campaign_id: str) -> Any:
 # ============================================================
 
 @mcp.tool()
-def list_ad_sets(campaign_id: str | None = None) -> Any:
+def list_ad_sets(campaign_id: str | None = None, output_format: str = "json") -> Any:
     """Lista ad sets. Se campaign_id informado, filtra por campanha."""
     args = ["adset", "list"]
     if campaign_id:
         args.append(campaign_id)
-    return _run(*args)
+    return _run(*args, output_format=output_format)
 
 
 @mcp.tool()
-def get_ad_set(ad_set_id: str) -> Any:
+def get_ad_set(ad_set_id: str, output_format: str = "json") -> Any:
     """Detalhes de um ad set."""
-    return _run("adset", "get", ad_set_id)
+    return _run("adset", "get", ad_set_id, output_format=output_format)
 
 
 @mcp.tool()
@@ -202,6 +231,7 @@ def create_ad_set(
     targeting_countries: list[str] | None = None,
     pixel_id: str | None = None,
     custom_event_type: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Cria ad set numa campanha. Default: PAUSED.
 
@@ -233,6 +263,7 @@ def create_ad_set(
             pixel_id=pixel_id,
             custom_event_type=custom_event_type,
         ),
+        output_format=output_format,
     )
 
 
@@ -245,6 +276,7 @@ def update_ad_set(
     lifetime_budget_cents: int | None = None,
     bid_amount_cents: int | None = None,
     end_time: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Atualiza ad set. status: active | paused | archived."""
     return _run(
@@ -257,25 +289,26 @@ def update_ad_set(
             bid_amount=bid_amount_cents,
             end_time=end_time,
         ),
+        output_format=output_format,
     )
 
 
 @mcp.tool()
-def pause_ad_set(ad_set_id: str) -> Any:
+def pause_ad_set(ad_set_id: str, output_format: str = "json") -> Any:
     """Pausa ad set."""
-    return _run("adset", "update", ad_set_id, "--status", "paused")
+    return _run("adset", "update", ad_set_id, "--status", "paused", output_format=output_format)
 
 
 @mcp.tool()
-def resume_ad_set(ad_set_id: str) -> Any:
+def resume_ad_set(ad_set_id: str, output_format: str = "json") -> Any:
     """Reativa ad set."""
-    return _run("adset", "update", ad_set_id, "--status", "active")
+    return _run("adset", "update", ad_set_id, "--status", "active", output_format=output_format)
 
 
 @mcp.tool()
-def delete_ad_set(ad_set_id: str) -> Any:
+def delete_ad_set(ad_set_id: str, output_format: str = "json") -> Any:
     """Deleta ad set (e ads filhos). DESTRUTIVO. Sempre --force."""
-    return _run("adset", "delete", ad_set_id, "--force")
+    return _run("adset", "delete", ad_set_id, "--force", output_format=output_format)
 
 
 # ============================================================
@@ -283,18 +316,18 @@ def delete_ad_set(ad_set_id: str) -> Any:
 # ============================================================
 
 @mcp.tool()
-def list_ads(ad_set_id: str | None = None) -> Any:
+def list_ads(ad_set_id: str | None = None, output_format: str = "json") -> Any:
     """Lista ads. Se ad_set_id informado, filtra por ad set."""
     args = ["ad", "list"]
     if ad_set_id:
         args.append(ad_set_id)
-    return _run(*args)
+    return _run(*args, output_format=output_format)
 
 
 @mcp.tool()
-def get_ad(ad_id: str) -> Any:
+def get_ad(ad_id: str, output_format: str = "json") -> Any:
     """Detalhes de um ad."""
-    return _run("ad", "get", ad_id)
+    return _run("ad", "get", ad_id, output_format=output_format)
 
 
 @mcp.tool()
@@ -305,6 +338,7 @@ def create_ad(
     status: str = "paused",
     pixel_id: str | None = None,
     tracking_specs: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Cria ad num ad set, referenciando um creative existente. Default: PAUSED.
 
@@ -321,6 +355,7 @@ def create_ad(
             pixel_id=pixel_id,
             tracking_specs=tracking_specs,
         ),
+        output_format=output_format,
     )
 
 
@@ -330,30 +365,32 @@ def update_ad(
     name: str | None = None,
     creative_id: str | None = None,
     status: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Atualiza ad. status: active | paused | archived."""
     return _run(
         "ad", "update", ad_id,
         *_flags(name=name, creative_id=creative_id, status=status),
+        output_format=output_format,
     )
 
 
 @mcp.tool()
-def pause_ad(ad_id: str) -> Any:
+def pause_ad(ad_id: str, output_format: str = "json") -> Any:
     """Pausa ad."""
-    return _run("ad", "update", ad_id, "--status", "paused")
+    return _run("ad", "update", ad_id, "--status", "paused", output_format=output_format)
 
 
 @mcp.tool()
-def resume_ad(ad_id: str) -> Any:
+def resume_ad(ad_id: str, output_format: str = "json") -> Any:
     """Reativa ad."""
-    return _run("ad", "update", ad_id, "--status", "active")
+    return _run("ad", "update", ad_id, "--status", "active", output_format=output_format)
 
 
 @mcp.tool()
-def delete_ad(ad_id: str) -> Any:
+def delete_ad(ad_id: str, output_format: str = "json") -> Any:
     """Deleta ad. DESTRUTIVO. Sempre --force."""
-    return _run("ad", "delete", ad_id, "--force")
+    return _run("ad", "delete", ad_id, "--force", output_format=output_format)
 
 
 # ============================================================
@@ -361,15 +398,15 @@ def delete_ad(ad_id: str) -> Any:
 # ============================================================
 
 @mcp.tool()
-def list_creatives() -> Any:
+def list_creatives(output_format: str = "json") -> Any:
     """Lista creatives da ad account ativa."""
-    return _run("creative", "list")
+    return _run("creative", "list", output_format=output_format)
 
 
 @mcp.tool()
-def get_creative(creative_id: str) -> Any:
+def get_creative(creative_id: str, output_format: str = "json") -> Any:
     """Detalhes de um creative."""
-    return _run("creative", "get", creative_id)
+    return _run("creative", "get", creative_id, output_format=output_format)
 
 
 @mcp.tool()
@@ -384,6 +421,7 @@ def create_creative(
     description: str | None = None,
     call_to_action: str | None = None,
     instagram_actor_id: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Cria creative (modo standard — single image OU video).
 
@@ -408,6 +446,7 @@ def create_creative(
             call_to_action=call_to_action,
             instagram_actor_id=instagram_actor_id,
         ),
+        output_format=output_format,
     )
 
 
@@ -423,6 +462,7 @@ def create_creative_dco(
     descriptions: list[str] | None = None,
     call_to_actions: list[str] | None = None,
     instagram_actor_id: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Cria creative DCO (Dynamic Creative Optimization).
 
@@ -443,6 +483,7 @@ def create_creative_dco(
             call_to_actions=call_to_actions,
             instagram_actor_id=instagram_actor_id,
         ),
+        output_format=output_format,
     )
 
 
@@ -459,6 +500,7 @@ def update_creative(
     call_to_action: str | None = None,
     instagram_actor_id: str | None = None,
     status: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Atualiza creative. Apenas campos informados são alterados.
 
@@ -479,13 +521,14 @@ def update_creative(
             instagram_actor_id=instagram_actor_id,
             status=status,
         ),
+        output_format=output_format,
     )
 
 
 @mcp.tool()
-def delete_creative(creative_id: str) -> Any:
+def delete_creative(creative_id: str, output_format: str = "json") -> Any:
     """Deleta creative. Bloqueia se está em uso por ads ativos. Sempre --force."""
-    return _run("creative", "delete", creative_id, "--force")
+    return _run("creative", "delete", creative_id, "--force", output_format=output_format)
 
 
 # ============================================================
@@ -505,6 +548,7 @@ def get_insights(
     ad_id: str | None = None,
     sort: str | None = None,
     limit: int = 50,
+    output_format: str = "json",
 ) -> Any:
     """Query de performance: impressões, cliques, gasto, CPC, CPM, etc.
 
@@ -534,7 +578,7 @@ def get_insights(
         args += ["--breakdown", b]
     if fields:
         args += ["--fields", ",".join(fields)]
-    return _run(*args)
+    return _run(*args, output_format=output_format)
 
 
 # ============================================================
@@ -542,35 +586,35 @@ def get_insights(
 # ============================================================
 
 @mcp.tool()
-def list_catalogs() -> Any:
+def list_catalogs(output_format: str = "json") -> Any:
     """Lista product catalogs do business."""
-    return _run("catalog", "list")
+    return _run("catalog", "list", output_format=output_format)
 
 
 @mcp.tool()
-def get_catalog(catalog_id: str) -> Any:
+def get_catalog(catalog_id: str, output_format: str = "json") -> Any:
     """Detalhes de um catálogo."""
-    return _run("catalog", "get", catalog_id)
+    return _run("catalog", "get", catalog_id, output_format=output_format)
 
 
 @mcp.tool()
-def create_catalog(name: str, vertical: str = "commerce") -> Any:
+def create_catalog(name: str, vertical: str = "commerce", output_format: str = "json") -> Any:
     """Cria catálogo. vertical: commerce (default) | hotels | flights | destinations |
     home_listings | vehicles | adoptable_pets | offer_items | offline_commerce |
     transactable_items | generic | local_service_businesses."""
-    return _run("catalog", "create", *_flags(name=name, vertical=vertical))
+    return _run("catalog", "create", *_flags(name=name, vertical=vertical), output_format=output_format)
 
 
 @mcp.tool()
-def update_catalog(catalog_id: str, name: str | None = None) -> Any:
+def update_catalog(catalog_id: str, name: str | None = None, output_format: str = "json") -> Any:
     """Atualiza catálogo."""
-    return _run("catalog", "update", catalog_id, *_flags(name=name))
+    return _run("catalog", "update", catalog_id, *_flags(name=name), output_format=output_format)
 
 
 @mcp.tool()
-def delete_catalog(catalog_id: str) -> Any:
+def delete_catalog(catalog_id: str, output_format: str = "json") -> Any:
     """Deleta catálogo. Bloqueia se houver feeds/ads ativos. Sempre --force."""
-    return _run("catalog", "delete", catalog_id, "--force")
+    return _run("catalog", "delete", catalog_id, "--force", output_format=output_format)
 
 
 # ============================================================
@@ -578,15 +622,15 @@ def delete_catalog(catalog_id: str) -> Any:
 # ============================================================
 
 @mcp.tool()
-def list_pages() -> Any:
+def list_pages(output_format: str = "json") -> Any:
     """Lista business pages acessíveis."""
-    return _run("page", "list")
+    return _run("page", "list", output_format=output_format)
 
 
 @mcp.tool()
-def get_page(page_id: str) -> Any:
+def get_page(page_id: str, output_format: str = "json") -> Any:
     """Detalhes de uma Facebook Page."""
-    return _run("page", "get", page_id)
+    return _run("page", "get", page_id, output_format=output_format)
 
 
 # ============================================================
@@ -594,22 +638,22 @@ def get_page(page_id: str) -> Any:
 # ============================================================
 
 @mcp.tool()
-def list_datasets() -> Any:
+def list_datasets(output_format: str = "json") -> Any:
     """Lista datasets (ads pixels) do business."""
-    return _run("dataset", "list")
+    return _run("dataset", "list", output_format=output_format)
 
 
 @mcp.tool()
-def get_dataset(pixel_id: str) -> Any:
+def get_dataset(pixel_id: str, output_format: str = "json") -> Any:
     """Detalhes de um dataset (pixel)."""
-    return _run("dataset", "get", pixel_id)
+    return _run("dataset", "get", pixel_id, output_format=output_format)
 
 
 @mcp.tool()
-def create_dataset(name: str) -> Any:
+def create_dataset(name: str, output_format: str = "json") -> Any:
     """Cria dataset (pixel) no business. Usuário autenticado fica com
     ADVERTISE/ANALYZE/EDIT automaticamente."""
-    return _run("dataset", "create", *_flags(name=name))
+    return _run("dataset", "create", *_flags(name=name), output_format=output_format)
 
 
 @mcp.tool()
@@ -617,20 +661,23 @@ def connect_dataset(
     pixel_id: str,
     ad_account_id: str | None = None,
     catalog_id: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Conecta dataset a uma ad account e/ou catálogo (informe pelo menos um)."""
     return _run(
         "dataset", "connect", pixel_id,
         *_flags(ad_account_id=ad_account_id, catalog_id=catalog_id),
+        output_format=output_format,
     )
 
 
 @mcp.tool()
-def disconnect_dataset(pixel_id: str, ad_account_id: str) -> Any:
+def disconnect_dataset(pixel_id: str, ad_account_id: str, output_format: str = "json") -> Any:
     """Desconecta dataset de uma ad account."""
     return _run(
         "dataset", "disconnect", pixel_id,
         *_flags(ad_account_id=ad_account_id),
+        output_format=output_format,
     )
 
 
@@ -639,12 +686,14 @@ def assign_user_to_dataset(
     pixel_id: str,
     user_id: str | None = None,
     tasks: list[str] | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Atribui usuário ao dataset. user_id default = usuário autenticado.
     tasks: advertise | analyze | edit | upload. Default: [advertise, analyze]."""
     return _run(
         "dataset", "assign-user", pixel_id,
         *_flags(user_id=user_id, tasks=tasks),
+        output_format=output_format,
     )
 
 
@@ -653,15 +702,15 @@ def assign_user_to_dataset(
 # ============================================================
 
 @mcp.tool()
-def list_product_sets(catalog_id: str) -> Any:
+def list_product_sets(catalog_id: str, output_format: str = "json") -> Any:
     """Lista product sets de um catálogo."""
-    return _run("product-set", "list", *_flags(catalog_id=catalog_id))
+    return _run("product-set", "list", *_flags(catalog_id=catalog_id), output_format=output_format)
 
 
 @mcp.tool()
-def get_product_set(product_set_id: str) -> Any:
+def get_product_set(product_set_id: str, output_format: str = "json") -> Any:
     """Detalhes de um product set."""
-    return _run("product-set", "get", product_set_id)
+    return _run("product-set", "get", product_set_id, output_format=output_format)
 
 
 @mcp.tool()
@@ -670,6 +719,7 @@ def create_product_set(
     name: str,
     filter_json: str | None = None,
     retailer_id: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Cria product set dentro de um catálogo.
 
@@ -678,6 +728,7 @@ def create_product_set(
     return _run(
         "product-set", "create",
         *_flags(catalog_id=catalog_id, name=name, filter=filter_json, retailer_id=retailer_id),
+        output_format=output_format,
     )
 
 
@@ -687,18 +738,20 @@ def update_product_set(
     name: str | None = None,
     filter_json: str | None = None,
     retailer_id: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Atualiza product set."""
     return _run(
         "product-set", "update", product_set_id,
         *_flags(name=name, filter=filter_json, retailer_id=retailer_id),
+        output_format=output_format,
     )
 
 
 @mcp.tool()
-def delete_product_set(product_set_id: str) -> Any:
+def delete_product_set(product_set_id: str, output_format: str = "json") -> Any:
     """Deleta product set. Sempre --force."""
-    return _run("product-set", "delete", product_set_id, "--force")
+    return _run("product-set", "delete", product_set_id, "--force", output_format=output_format)
 
 
 # ============================================================
@@ -706,15 +759,15 @@ def delete_product_set(product_set_id: str) -> Any:
 # ============================================================
 
 @mcp.tool()
-def list_product_items(catalog_id: str) -> Any:
+def list_product_items(catalog_id: str, output_format: str = "json") -> Any:
     """Lista product items de um catálogo."""
-    return _run("product-item", "list", *_flags(catalog_id=catalog_id))
+    return _run("product-item", "list", *_flags(catalog_id=catalog_id), output_format=output_format)
 
 
 @mcp.tool()
-def get_product_item(product_item_id: str) -> Any:
+def get_product_item(product_item_id: str, output_format: str = "json") -> Any:
     """Detalhes de um product item."""
-    return _run("product-item", "get", product_item_id)
+    return _run("product-item", "get", product_item_id, output_format=output_format)
 
 
 @mcp.tool()
@@ -731,6 +784,7 @@ def create_product_item(
     category: str | None = None,
     availability: str = "in stock",
     condition: str = "new",
+    output_format: str = "json",
 ) -> Any:
     """Cria product item num catálogo.
 
@@ -757,6 +811,7 @@ def create_product_item(
             availability=availability,
             condition=condition,
         ),
+        output_format=output_format,
     )
 
 
@@ -773,6 +828,7 @@ def update_product_item(
     condition: str | None = None,
     price_cents: int | None = None,
     currency: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Atualiza product item."""
     return _run(
@@ -789,13 +845,14 @@ def update_product_item(
             price=price_cents,
             currency=currency,
         ),
+        output_format=output_format,
     )
 
 
 @mcp.tool()
-def delete_product_item(product_item_id: str) -> Any:
+def delete_product_item(product_item_id: str, output_format: str = "json") -> Any:
     """Deleta product item. Sempre --force."""
-    return _run("product-item", "delete", product_item_id, "--force")
+    return _run("product-item", "delete", product_item_id, "--force", output_format=output_format)
 
 
 # ============================================================
@@ -803,15 +860,15 @@ def delete_product_item(product_item_id: str) -> Any:
 # ============================================================
 
 @mcp.tool()
-def list_product_feeds(catalog_id: str) -> Any:
+def list_product_feeds(catalog_id: str, output_format: str = "json") -> Any:
     """Lista product feeds de um catálogo."""
-    return _run("product-feed", "list", *_flags(catalog_id=catalog_id))
+    return _run("product-feed", "list", *_flags(catalog_id=catalog_id), output_format=output_format)
 
 
 @mcp.tool()
-def get_product_feed(product_feed_id: str) -> Any:
+def get_product_feed(product_feed_id: str, output_format: str = "json") -> Any:
     """Detalhes de um product feed."""
-    return _run("product-feed", "get", product_feed_id)
+    return _run("product-feed", "get", product_feed_id, output_format=output_format)
 
 
 @mcp.tool()
@@ -823,6 +880,7 @@ def create_product_feed(
     country: str | None = None,
     encoding: str | None = None,
     file_name: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Cria product feed num catálogo.
 
@@ -842,6 +900,7 @@ def create_product_feed(
             encoding=encoding,
             file_name=file_name,
         ),
+        output_format=output_format,
     )
 
 
@@ -853,6 +912,7 @@ def update_product_feed(
     country: str | None = None,
     encoding: str | None = None,
     file_name: str | None = None,
+    output_format: str = "json",
 ) -> Any:
     """Atualiza product feed."""
     return _run(
@@ -864,13 +924,14 @@ def update_product_feed(
             encoding=encoding,
             file_name=file_name,
         ),
+        output_format=output_format,
     )
 
 
 @mcp.tool()
-def delete_product_feed(product_feed_id: str) -> Any:
+def delete_product_feed(product_feed_id: str, output_format: str = "json") -> Any:
     """Deleta product feed. Sempre --force."""
-    return _run("product-feed", "delete", product_feed_id, "--force")
+    return _run("product-feed", "delete", product_feed_id, "--force", output_format=output_format)
 
 
 if __name__ == "__main__":
