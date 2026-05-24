@@ -5,7 +5,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 **O que você ganha rodando isso:**
 - Um gateway OpenClaw acessível em `http://127.0.0.1:18789` (via tunnel do laptop).
 - Ollama no mesmo container — modelos locais (`llama3.2:3b`, `qwen2.5:7b`, etc.) sem dependência de API paga.
-- 60 tools MCP pra Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, datasets/pixels, product sets/items/feeds) — agente cria/edita/lê campanhas direto.
+- 70 tools MCP pra Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, datasets/pixels, product sets/items/feeds, **custom audiences**, **lookalikes**, **duplicação de campanhas/adsets/ads**) — agente cria/edita/lê/duplica/segmenta direto. 60 via CLI oficial + 10 via Graph API direta (audience/copies, que a CLI não cobre).
 - Bloco demarcado no `Dockerfile` pra "bakear" suas próprias CLIs/binários (gog, goplaces, wacli já vêm de exemplo).
 
 ---
@@ -248,7 +248,7 @@ Cole o `OPENCLAW_GATEWAY_TOKEN` do `.env` quando pedir.
 
 Na UI:
 1. **Models** → confirma se aparece a opção Ollama (URL default `http://127.0.0.1:11434`). Se quiser usar API paga (Anthropic/OpenAI), adiciona aqui também.
-2. **MCP Servers** → você já deve ver `meta-ads` listado com ~60 tools. Se não aparecer, repete o Passo 9.
+2. **MCP Servers** → você já deve ver `meta-ads` listado com ~70 tools. Se não aparecer, repete o Passo 9.
 3. **Agents** → **New Agent** → escolhe o model, marca o MCP `meta-ads` como disponível, dá nome ("AdsOps", por exemplo), e descreve o que ele faz no system prompt.
 
 Exemplo de system prompt pro agente de Meta Ads:
@@ -273,8 +273,12 @@ Outros testes úteis pra confiança:
 
 ```
 Mostra a ad account ativa.
-Pega os insights da última semana agrupados por dia.
+Pega os insights da última semana agrupados por campanha.
+Lista minhas custom audiences.
+Duplica o ad set <ID> com sufixo "-copy-test" em PAUSED.
 ```
+
+> Duplicações nascem em `status="PAUSED"` por default — pode testar sem medo de gastar dinheiro.
 
 Comandos diretos no container pra debug:
 
@@ -336,7 +340,7 @@ Sugestões por tamanho:
 ├── entrypoint.sh            # ollama serve + openclaw mcp set + exec CMD
 ├── docker-compose.yml       # serviço único openclaw-gateway, env, volumes, portas
 ├── middleware/
-│   ├── meta_ads_cli_mcp.py  # MCP server Python — 60 tools envelopando 'meta ads'
+│   ├── meta_ads_cli_mcp.py  # MCP server Python — 70 tools (CLI + Graph API)
 │   └── requirements.txt
 ├── .env.example
 └── README.md
@@ -361,7 +365,37 @@ Sugestões por tamanho:
 - **Custom Audiences** (Graph API direta, não passa pela CLI): `list_custom_audiences`, `get_custom_audience`, `create_custom_audience`, `create_lookalike_audience`, `add_users_to_audience`, `remove_users_from_audience`, `delete_custom_audience`
 - **Duplicação** (Graph API direta — endpoint `/copies`): `duplicate_campaign`, `duplicate_ad_set`, `duplicate_ad`. Default `status_option="PAUSED"` + `deep_copy=True`. Aceita `new_name` (renomeia depois de duplicar) ou `rename_suffix` (Meta acrescenta sufixo numa única chamada).
 
-Todas as tools que envelopam a CLI aceitam `output_format` (`json` default | `table` | `plain` | `none`). Todos os `create_*` partem com `status="paused"` por segurança. As tools de audience hasham email/phone localmente em SHA256 antes de enviar (Meta exige PII hasheada) — use `already_hashed=True` se a lista já vier pronta.
+Todas as tools que envelopam a CLI aceitam `output_format` (`json` default | `table` | `plain` | `none`). Todos os `create_*` e `duplicate_*` partem com `status="paused"` / `status_option="PAUSED"` por segurança. As tools de audience hasham email/phone localmente em SHA256 antes de enviar (Meta exige PII hasheada) — use `already_hashed=True` se a lista já vier pronta.
+
+### Convenções de segurança operacional do wrapper
+
+- **Safe-by-default em writes**: todo `create_*` nasce em `paused`. Todo `duplicate_*` nasce em `PAUSED`. Pra ativar, o agente precisa chamar `resume_*` ou `update_*` explicitamente — não há atalho acidental pra produção.
+- **Deletes obrigam `--force`**: não há prompt interativo no MCP, então o wrapper sempre passa `--force`. Quem chama `delete_*` está afirmando que tem certeza.
+- **PII nunca trafega em claro**: `add_users_to_audience` / `remove_users_from_audience` aplicam SHA256 local. Mesmo se um log capturar a chamada de rede, não vaza email/phone original.
+- **`act_` prefix normalizado**: `META_AD_ACCOUNT_ID` aceita com ou sem `act_`. O entrypoint adiciona se faltar — não dá pra quebrar a CLI por formato de ID.
+- **Env explicitamente passado pro MCP child**: o `entrypoint.sh` declara `env` no `openclaw mcp set` em vez de confiar em propagação implícita. Sem isso a CLI da Meta retorna "No access token found" mesmo com env no container.
+- **Saída JSON sanitizada**: `--no-color --no-input` em toda chamada da CLI evita ANSI sujando o `json.loads`. `"No results."` é normalizado pra `[]`. `current_ad_account` é sintetizado do env (a CLI não suporta JSON nesse subcomando).
+
+### Arquitetura multi-agente recomendada (opcional)
+
+Esse MCP é o **executor** — quem realmente fala com a Meta. Mas pra operar tráfego pago com qualidade, vale ter agentes especializados em torno dele. Padrão sugerido (6 agentes, todos no mesmo OpenClaw):
+
+| Agente | Trigger | Lê | Escreve | MCP? |
+|---|---|---|---|---|
+| **Coletor** | Cron (ex: 6x/dia) | — | `snapshots/{ts}.json` | ✅ list/get/insights |
+| **Analista** | Cron (ex: 3x/dia) | `snapshots/` | `insights/{ts}.json` | ❌ |
+| **Estrategista** | Evento `insights-ready` | `insights/`, `snapshots/`, `decisions/` | `recommendations/{ts}.json` | ❌ |
+| **Aprovador** | Evento `recommendations-ready` | `recommendations/` | `decisions/approved\|rejected/{ts}.json` | ❌ (usa Telegram) |
+| **Executor** | Evento `action-approved` | `decisions/approved/` | `executions/{ts}.json` | ✅ pause/update/duplicate |
+| **Auditor** | Cron semanal | tudo | `audit/{week}.json` | ❌ |
+
+Princípios:
+- **Coletor é read-only**. Nunca chama write tool.
+- **Estrategista propõe, humano aprova, Executor executa**. Apenas o Executor toca em mutating tools, e só com `authorization_token` válido vindo do Aprovador.
+- **Catálogo restrito de ações**: o Executor só roda `pause_*`, `update_*` (budget), `duplicate_*`. Tudo fora disso é alerta pra humano.
+- **Memory > prompt**: snapshots e decisões ficam em memory shared, não em system prompt do agente — sobrevive a restart, dá pra auditar.
+
+Esse padrão não está hardcoded no MCP — é arquitetura que você compõe na UI do OpenClaw. O MCP só expõe as ferramentas; cada agente decide quando usa.
 
 ### Adicionar uma CLI nova à imagem
 
