@@ -27,6 +27,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
   - [Passo 10 — SSH tunnel do laptop](#passo-10--ssh-tunnel-do-laptop)
   - [Passo 11 — Abrir a UI e criar o primeiro agente](#passo-11--abrir-a-ui-e-criar-o-primeiro-agente)
   - [Passo 12 — Smoke test do MCP Meta Ads](#passo-12--smoke-test-do-mcp-meta-ads)
+  - [Passo 13 — (Opcional) Habilitar agent-to-agent e subagentes](#passo-13--opcional-habilitar-agent-to-agent-e-subagentes)
 - [Atualizar o projeto na VPS](#atualizar-o-projeto-na-vps)
 - [Baixar modelos no Ollama](#baixar-modelos-no-ollama)
 - [Referência técnica](#referência-técnica)
@@ -287,6 +288,78 @@ docker compose exec openclaw-gateway meta auth status
 docker compose exec openclaw-gateway meta --output json ads campaign list
 ```
 
+### Passo 13 — (Opcional) Habilitar agent-to-agent e subagentes
+
+**Pule esse passo se você só vai operar com um agente único.** Esse passo libera comunicação entre agentes (`sessions_send`, `sessions_history`, `sessions_list`, `session_status`) e permite que um agente spawne outro como subagente — pré-requisito pra rodar a [arquitetura multi-agente recomendada](#arquitetura-multi-agente-recomendada-opcional) (Analista → Estrategista → Executor).
+
+Por padrão o OpenClaw bloqueia spawn cruzado (`agentId is not allowed for sessions_spawn`). Os comandos abaixo destravam.
+
+Todos os comandos rodam dentro do container:
+
+```bash
+docker compose exec openclaw-gateway bash
+```
+
+**1. Habilita agent-to-agent**
+
+```bash
+openclaw config set tools.agentToAgent.enabled true
+
+openclaw config set tools.agentToAgent.allow \
+  '["analista","estrategista","copywriter","criativo","gestor-trafego","diretor"]'
+```
+
+Isso libera as tools `sessions_send`, `sessions_history`, `sessions_list`, `session_status` entre os agentes da allowlist. Troque a lista pelos IDs dos agentes que você criou na UI.
+
+**2. Habilita subagentes e allowlist de spawn cruzado**
+
+```bash
+openclaw config set agents.defaults.subagents.maxSpawnDepth 2
+openclaw config set agents.defaults.subagents.allowAgents '["*"]'
+openclaw config set agents.defaults.subagents.delegationMode "prefer"
+openclaw config set agents.defaults.subagents.maxConcurrent 4
+openclaw config set agents.defaults.subagents.runTimeoutSeconds 600
+```
+
+O que cada chave faz:
+
+- **`maxSpawnDepth: 2`** — permite padrão orquestrador (Analista → spawna Estrategista que pode spawnar trabalhador). Se você não precisa de aninhamento, deixe em `1`.
+- **`allowAgents: ["*"]`** — qualquer agente pode spawnar qualquer outro. É a chave que destrava o erro `agentId is not allowed for sessions_spawn`.
+- **`delegationMode: "prefer"`** — instrui o modelo a delegar via subagente em vez de tentar resolver sozinho.
+- **`maxConcurrent: 4`** — máximo de subagentes rodando simultaneamente.
+- **`runTimeoutSeconds: 600`** — mata subagente que rodar mais de 10 minutos. Defesa contra loop.
+
+**3. Confere e ajusta o perfil de tools de cada agente**
+
+Lista o estado atual:
+
+```bash
+openclaw config get agents.list
+```
+
+Os agentes devem ter `profile: "coding"` ou `profile: "full"` — perfis menores não expõem as tools de sessão.
+
+**4. Reinicia o gateway**
+
+```bash
+openclaw gateway restart
+```
+
+**5. Valida**
+
+```bash
+openclaw config get tools.agentToAgent
+openclaw config get agents.defaults.subagents
+```
+
+A saída do primeiro deve mostrar `enabled: true` e sua allowlist. A do segundo deve refletir as cinco chaves de `subagents` que você setou.
+
+Depois disso, no chat de qualquer agente da allowlist, você pode pedir coisas como:
+
+> Pergunte ao estrategista qual a próxima ação recomendada e me traga a resposta.
+
+E o agente vai usar `sessions_send` ou spawnar um subagente conforme o `delegationMode`.
+
 ---
 
 ## Atualizar o projeto na VPS
@@ -397,6 +470,8 @@ Princípios:
 
 Esse padrão não está hardcoded no MCP — é arquitetura que você compõe na UI do OpenClaw. O MCP só expõe as ferramentas; cada agente decide quando usa.
 
+> Pra esse padrão funcionar (Estrategista delegar pro Executor, Analista falar com Coletor, etc.) você precisa habilitar agent-to-agent e subagentes — veja [Passo 13](#passo-13--opcional-habilitar-agent-to-agent-e-subagentes). Sem isso, o OpenClaw bloqueia spawn cruzado com `agentId is not allowed for sessions_spawn`.
+
 ### Adicionar uma CLI nova à imagem
 
 Edita o `Dockerfile`, localiza o bloco demarcado `BINÁRIOS CUSTOMIZADOS`, e adiciona:
@@ -477,6 +552,14 @@ O System User não tem papel "Anunciante" (ou superior) na ad account, OU o toke
 ### `pnpm install` falha por lockfile
 
 Mudança no upstream. Troca `OPENCLAW_REF` no `.env` pra uma tag/commit conhecidamente bom e rebuild.
+
+### `agentId is not allowed for sessions_spawn`
+
+Spawn cruzado entre agentes está desabilitado por padrão. Rode o [Passo 13](#passo-13--opcional-habilitar-agent-to-agent-e-subagentes) — especificamente o `agents.defaults.subagents.allowAgents '["*"]'` e o restart do gateway.
+
+### Agente não consegue chamar `sessions_send` / `sessions_history`
+
+O agent-to-agent não está habilitado, ou o ID do agente que chama não está na allowlist. Confere com `openclaw config get tools.agentToAgent` e adiciona o ID no array `allow`. Reinicia o gateway depois.
 
 ### JSON malformado em algum tool
 
