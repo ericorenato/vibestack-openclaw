@@ -297,7 +297,7 @@ Por padrão o OpenClaw bloqueia spawn cruzado (`agentId is not allowed for sessi
 Todos os comandos rodam dentro do container:
 
 ```bash
-docker compose exec openclaw-gateway bash
+docker compose exec -it openclaw-gateway bash
 ```
 
 **1. Habilita agent-to-agent**
