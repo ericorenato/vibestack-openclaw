@@ -22,10 +22,14 @@ services:
       - ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
-      # Pixel Agents Dashboard — entrypoint roda com cwd=/root/.openclaw/pixel-agents,
-      # entao o wizard grava la (path.resolve relativo ao cwd). OPENCLAW_GATEWAY_TOKEN
-      # ja exportado acima e expandido no JSON via ${VAR}.
-      - PIXEL_AGENTS_PORT=${PIXEL_AGENTS_PORT:-5070}
+      # Claw3D — Studio Next.js + proxy WS pro gateway in-process.
+      # HOST=0.0.0.0 e' obrigatorio pro Docker publicar a porta; nesse caso o
+      # access-gate exige STUDIO_ACCESS_TOKEN (reusamos OPENCLAW_GATEWAY_TOKEN).
+      # UPSTREAM_ALLOWLIST precisa de localhost,127.0.0.1 (gateway in-process).
+      - CLAW3D_PORT=${CLAW3D_PORT:-3000}
+      - CLAW3D_HOST=0.0.0.0
+      - STUDIO_ACCESS_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - UPSTREAM_ALLOWLIST=localhost,127.0.0.1
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       # UM mount só, abrangendo tudo do OpenClaw
@@ -37,9 +41,9 @@ services:
       # Loopback do host pra alcancar o ollama interno (opcional, SSH tunnel):
       #   ssh -N -L 11434:127.0.0.1:11434 root@VPS
       - "127.0.0.1:11434:11434"
-      # Pixel Agents Dashboard — UI pixel-art dos agentes:
-      #   ssh -N -L 5070:127.0.0.1:5070 root@VPS  -> http://localhost:5070
-      - "127.0.0.1:${PIXEL_AGENTS_PORT:-5070}:5070"
+      # Claw3D Studio — UI 3D dos agentes via Next.js:
+      #   ssh -N -L 3000:127.0.0.1:3000 root@VPS  -> http://localhost:3000
+      - "127.0.0.1:${CLAW3D_PORT:-3000}:3000"
     command:
       - "openclaw"
       - "gateway"

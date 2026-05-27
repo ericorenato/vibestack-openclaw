@@ -80,19 +80,24 @@ RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/ope
  && chmod +x /usr/local/bin/openclaw
 
 # ============================================================
-# Pixel Agents Dashboard — visualizer dos agentes OpenClaw
-# Sobe junto ao gateway via entrypoint, acessível por SSH tunnel.
+# Claw3D — visualizador 3D dos agentes OpenClaw (Next.js + Three.js).
+# Roda como custom server (server/index.js) e proxia WebSocket pro
+# gateway OpenClaw in-process. Sobe via entrypoint em background.
 # ============================================================
-ARG PIXEL_AGENTS_REPO=https://github.com/jaffer1979/openclaw-pixel-agents-dashboard.git
-ARG PIXEL_AGENTS_REF=main
+ARG CLAW3D_REPO=https://github.com/iamlukethedev/Claw3D.git
+ARG CLAW3D_REF=main
 
-RUN git clone --depth 1 --branch "${PIXEL_AGENTS_REF}" "${PIXEL_AGENTS_REPO}" /opt/pixel-agents-dashboard \
- && cd /opt/pixel-agents-dashboard \
- && npm install --no-audit --no-fund \
- && npm run build
+# Build-time gateway URL — embedded no bundle do browser via NEXT_PUBLIC_*.
+# O server tem proxy em /api/gateway/ws, entao o browser usa same-origin;
+# esse valor e' so o default que aparece nas configs do Studio.
+ARG CLAW3D_BUILD_GATEWAY_URL=ws://localhost:18789
 
-# Template de config copiado pro volume no primeiro boot (entrypoint).
-COPY dashboard/dashboard.config.default.json /opt/pixel-agents-dashboard/dashboard.config.default.json
+RUN git clone --depth 1 --branch "${CLAW3D_REF}" "${CLAW3D_REPO}" /opt/claw3d \
+ && cd /opt/claw3d \
+ && npm ci --no-audit --no-fund \
+ && NEXT_TELEMETRY_DISABLED=1 \
+    NEXT_PUBLIC_GATEWAY_URL="${CLAW3D_BUILD_GATEWAY_URL}" \
+    npm run build
 
 # Middleware MCP que envelopa a CLI 'meta' como tools tipados para o openclaw.
 COPY middleware /app/middleware
