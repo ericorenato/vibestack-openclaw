@@ -22,10 +22,10 @@ services:
       - ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
-      # Pixel Agents Dashboard — le PIXEL_AGENTS_CONFIG do volume persistido.
-      # OPENCLAW_GATEWAY_TOKEN ja exportado acima e expandido no JSON via ${VAR}.
+      # Pixel Agents Dashboard — entrypoint roda com cwd=/root/.openclaw/pixel-agents,
+      # entao o wizard grava la (path.resolve relativo ao cwd). OPENCLAW_GATEWAY_TOKEN
+      # ja exportado acima e expandido no JSON via ${VAR}.
       - PIXEL_AGENTS_PORT=${PIXEL_AGENTS_PORT:-5070}
-      - PIXEL_AGENTS_CONFIG=/root/.openclaw/pixel-agents/dashboard.config.json
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       # UM mount só, abrangendo tudo do OpenClaw
