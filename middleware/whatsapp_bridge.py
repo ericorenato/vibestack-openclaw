@@ -67,12 +67,49 @@ PROXY = {
 PROXY_OK = all(PROXY[k] for k in ("host", "port", "username", "password"))
 
 _allowed_raw = os.environ.get("WA_BRIDGE_ALLOWED_NUMBERS", "").strip()
-ALLOWED = {re.sub(r"\D", "", n) for n in _allowed_raw.split(",") if n.strip()}
+
+
+def _br_variants(num: str) -> set:
+    """Para celular BR, retorna {com_9, sem_9}. Resolve o 9o digito que o WhatsApp
+    as vezes omite no JID (ex.: 5584996306412 chega como 558496306412)."""
+    n = re.sub(r"\D", "", num or "")
+    out = {n} if n else set()
+    if n.startswith("55"):
+        ddd, rest = n[2:4], n[4:]
+        if len(rest) == 9 and rest.startswith("9"):
+            out.add("55" + ddd + rest[1:])      # tira o 9
+        elif len(rest) == 8:
+            out.add("55" + ddd + "9" + rest)     # poe o 9
+    return out
+
+
+# Allowlist expandida com as variantes BR (com/sem 9) — match nas duas formas.
+ALLOWED: set = set()
+for _n in _allowed_raw.split(","):
+    ALLOWED |= _br_variants(_n.strip())
+
+# Comandos (vindos do WhatsApp) que reiniciam a conversa.
+RESET_CMDS = {"/reset", "/novo", "/new", "/clear", "/limpar", "/reiniciar"}
 
 # Dedup de message IDs já processados (Evolution pode reentregar). Bounded.
 _seen_ids: dict[str, None] = {}
 _seen_lock = threading.Lock()
 _SEEN_MAX = 2000
+
+# Epoch por numero: incrementa a cada /reset -> muda a sessao -> contexto novo.
+_epoch: dict = {}
+_epoch_lock = threading.Lock()
+
+
+def _session_key(number: str) -> str:
+    e = _epoch.get(number, 0)
+    base = f"{SESSION_PREFIX}:{number}"
+    return base if e == 0 else f"{base}:{e}"
+
+
+def _reset_session(number: str) -> None:
+    with _epoch_lock:
+        _epoch[number] = _epoch.get(number, 0) + 1
 
 
 def _log(msg: str) -> None:
@@ -148,7 +185,7 @@ def _ask_hermes(number: str, text: str) -> str:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {UPSTREAM_KEY}",
-            "X-Hermes-Session-Id": f"{SESSION_PREFIX}:{number}",
+            "X-Hermes-Session-Id": _session_key(number),
         },
     )
     with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT) as resp:
@@ -166,7 +203,7 @@ def _ask_openclaw(number: str, text: str) -> str:
     o OpenClaw só DEVOLVE a resposta (a gente envia pelo Evolution). --json dá
     saída estruturada; parseamos o texto da resposta de forma defensiva.
     """
-    cmd = ["openclaw", "agent", "--message", text, "--to", f"+{number}", "--json"]
+    cmd = ["openclaw", "agent", "--message", text, "--session-key", _session_key(number), "--json"]
     if OPENCLAW_AGENT_ID:
         cmd += ["--agent", OPENCLAW_AGENT_ID]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=UPSTREAM_TIMEOUT, check=False)
@@ -208,6 +245,14 @@ def _send_whatsapp(number: str, text: str) -> None:
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
         resp.read()
+
+
+def _reply_safe(number: str, text: str) -> None:
+    """Envia uma resposta direta (ex.: confirmacao de reset) tolerando erro."""
+    try:
+        _send_whatsapp(number, text)
+    except Exception as e:  # noqa: BLE001
+        _log(f"erro enviando aviso pra {number}: {e}")
 
 
 def _process(number: str, text: str) -> None:
@@ -256,8 +301,19 @@ class Handler(BaseHTTPRequestHandler):
         number, text, msg_id = extracted
         if _seen(msg_id):
             return
-        if ALLOWED and number not in ALLOWED:
+        # Allowlist com variantes BR (com/sem 9) — casa nas duas formas.
+        if ALLOWED and not (_br_variants(number) & ALLOWED):
             _log(f"ignorado (fora da allowlist): {number}")
+            return
+        # Comando de reset vindo do WhatsApp -> nova sessao, sem chamar o agente.
+        if text.strip().lower() in RESET_CMDS:
+            _reset_session(number)
+            _log(f"reset solicitado por {number} -> sessao {_session_key(number)}")
+            threading.Thread(
+                target=_reply_safe,
+                args=(number, "🔄 Conversa reiniciada. Pode mandar a próxima mensagem."),
+                daemon=True,
+            ).start()
             return
         threading.Thread(target=_process, args=(number, text), daemon=True).start()
 

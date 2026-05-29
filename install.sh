@@ -269,6 +269,28 @@ gen_secret() {
   fi
 }
 
+# _wa_expand_br "CSV de numeros" -> CSV com as variantes BR (com/sem o 9o digito).
+# WhatsApp as vezes entrega o numero BR sem o 9; registramos as duas formas pra
+# o allowlist casar. Ex.: 5584996306412 -> 5584996306412,558496306412
+_wa_expand_br() {
+  _out=""; _oldifs="$IFS"; IFS=','
+  for _n in $1; do
+    _n=$(printf '%s' "$_n" | tr -cd '0-9')
+    [ -z "$_n" ] && continue
+    _out="${_out:+$_out,}$_n"
+    case "$_n" in
+      55*)
+        _len=${#_n}; _pre=$(printf '%s' "$_n" | cut -c1-4)   # 55 + DDD
+        if [ "$_len" -eq 13 ] && [ "$(printf '%s' "$_n" | cut -c5)" = "9" ]; then
+          _out="$_out,${_pre}$(printf '%s' "$_n" | cut -c6-)"     # sem o 9
+        elif [ "$_len" -eq 12 ]; then
+          _out="$_out,${_pre}9$(printf '%s' "$_n" | cut -c5-)"    # com o 9
+        fi ;;
+    esac
+  done
+  IFS="$_oldifs"; printf '%s' "$_out"
+}
+
 # --- 4. preparar .env ------------------------------------------------------
 step "Preparando .env"
 FRESH_ENV=0
@@ -355,9 +377,10 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
 
   # Allowlist do canal de WhatsApp: numeros que podem conversar com o agente.
   wa_nums="$(ask 'Seu numero de WhatsApp p/ falar com o agente (DDI+DDD+numero; vazio = qualquer um)' "$(get_env_var .env WA_BRIDGE_ALLOWED_NUMBERS)")"
-  set_env_var .env WA_BRIDGE_ALLOWED_NUMBERS "$wa_nums"
-  if [ -n "$wa_nums" ]; then
-    info "Canal WhatsApp restrito a: $wa_nums"
+  wa_nums_exp="$(_wa_expand_br "$wa_nums")"      # registra tb a variante com/sem o 9 (Brasil)
+  set_env_var .env WA_BRIDGE_ALLOWED_NUMBERS "$wa_nums_exp"
+  if [ -n "$wa_nums_exp" ]; then
+    info "Canal WhatsApp restrito a: $wa_nums_exp"
   else
     warn 'WA_BRIDGE_ALLOWED_NUMBERS vazio — QUALQUER numero podera conversar com o agente. Edite o .env pra restringir.'
   fi
