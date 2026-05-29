@@ -49,6 +49,7 @@ Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenCla
 | Ollama             | 11434            | `ollama serve`                    |
 | Claw3D Studio      | 3000             | Next.js + socat                   |
 | Hermes API server  | 8642             | `hermes gateway` (api_server)     |
+| Hermes dashboard   | 9119             | `hermes web` (UI de gestão/chat)  |
 
 O entrypoint registra o MCP automaticamente no boot via `openclaw mcp set`, propagando `ACCESS_TOKEN`/`AD_ACCOUNT_ID` pro processo filho.
 
@@ -593,8 +594,13 @@ com o extra `[all]` (browser/Playwright, mcp, messaging, etc.), e **compartilha 
 tools MCP** que o OpenClaw — `meta-ads` e `media-editor` (mesmos scripts em
 `/app/middleware`, mesmo venv).
 
-Como roda numa **porta separada** (8642), coexiste com o OpenClaw (18789), Claw3D (3000)
-e Ollama (11434) sem conflito — são processos independentes no mesmo container.
+Ele expõe **duas portas separadas**, ambas coexistindo com OpenClaw (18789), Claw3D (3000)
+e Ollama (11434):
+
+- **8642 — `api_server`**: uma **API OpenAI-compatible** (`/v1/chat/completions`, `/v1/models`,
+  `/health`). **Não é uma página de navegador** — é pra conectar frontends/clientes.
+- **9119 — `hermes web`**: o **dashboard web** (UI React de gestão/chat). **Esta é a "página web"**
+  do Hermes — abre no navegador.
 
 ### O que o entrypoint faz no boot
 
@@ -603,6 +609,9 @@ e Ollama (11434) sem conflito — são processos independentes no mesmo containe
    filtro de `tools`, o Hermes habilita todas as tools de cada server.
 2. **Sobe o `hermes gateway`** em background. A única plataforma que sobe sem token é o
    `api_server` (OpenAI-compatible), que **exige `HERMES_API_SERVER_KEY`** pra iniciar.
+3. **Sobe o `hermes web`** (dashboard) em background na 9119, com `--insecure` (sem
+   auth-gate) — seguro porque a porta só é publicada em loopback no host, acessível via
+   SSH tunnel na VPS (mesmo modelo do Claw3D). A UI já vem pré-buildada na imagem.
 
 > O provider/modelo **não** é configurado pelo build (decisão de projeto). Igual ao
 > OpenClaw, você configura depois — veja abaixo.
@@ -641,6 +650,27 @@ curl http://127.0.0.1:8642/v1/models \
 Qualquer frontend OpenAI-compatible (Open WebUI, LobeChat, etc.) conecta apontando pra
 `http://127.0.0.1:8642/v1` com a `HERMES_API_SERVER_KEY` como API key. O modelo exposto
 chama-se `hermes-agent`.
+
+### Acessar o dashboard web (a "página web")
+
+O `hermes web` roda na **9119**, publicado **apenas em loopback** no host.
+
+- **No Mac/Windows (local):** abra direto no navegador:
+  ```
+  http://127.0.0.1:9119
+  ```
+- **Na VPS:** túnel SSH do laptop e depois abra no navegador:
+  ```bash
+  ssh -N -L 9119:127.0.0.1:9119 root@YOUR_VPS_IP
+  # depois: http://127.0.0.1:9119
+  ```
+
+Como subimos com `--insecure` (auth-gate desligado, OK atrás do loopback/túnel), **não pede
+login** — abre direto no dashboard, onde você gerencia config, providers, env e sessões de
+chat. Pra ver o log dele: `docker compose exec openclaw-vibestack tail -f /var/log/hermes-web.log`.
+
+> Se ao abrir vier 404/tela em branco, o build da UI pode não ter rodado — confira o log
+> acima; em último caso, `docker compose exec -it openclaw-vibestack hermes web --host 0.0.0.0 --port 9119 --insecure --no-open` recompila a UI no boot.
 
 ### Confirmar as tools registradas
 

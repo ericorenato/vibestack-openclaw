@@ -35,6 +35,8 @@ services:
       # As tools (meta-ads/media-editor) reusam as vars Meta/B2 ja definidas acima.
       - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-}
       - HERMES_API_PORT=${HERMES_API_PORT:-8642}
+      # Dashboard web do Hermes (pagina de gestao/chat) — porta separada da API.
+      - HERMES_WEB_PORT=${HERMES_WEB_PORT:-9119}
     volumes:
       # UM mount só, abrangendo tudo do OpenClaw
       - ${OPENCLAW_DATA_DIR}:/root/.openclaw
@@ -55,6 +57,9 @@ services:
       # Hermes — API OpenAI-compatible (porta separada, coexiste com o OpenClaw):
       #   ssh -N -L 8642:127.0.0.1:8642 root@VPS  -> http://localhost:8642/v1
       - "127.0.0.1:${HERMES_API_PORT:-8642}:8642"
+      # Hermes — dashboard web (pagina de gestao/chat):
+      #   ssh -N -L 9119:127.0.0.1:9119 root@VPS  -> http://localhost:9119
+      - "127.0.0.1:${HERMES_WEB_PORT:-9119}:9119"
     command:
       - "openclaw"
       - "gateway"

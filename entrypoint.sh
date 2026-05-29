@@ -222,4 +222,17 @@ else
   echo "[entrypoint] LEMBRE: configure o provider/modelo do Hermes (docker exec -it <cont> hermes model) — o build nao baka provider."
 fi
 
+# Dashboard web do Hermes (Vite/React) — a "pagina web" de gestao/chat.
+# Bind 0.0.0.0 pra o Docker publicar; --insecure desliga o auth-gate (que e'
+# obrigatorio em bind nao-loopback). Como a porta so' e' publicada em
+# 127.0.0.1 no host (acesso via SSH tunnel na VPS), seguimos o mesmo modelo
+# loopback-sem-gate do Claw3D. Sem --skip-build: usa a UI ja' pre-buildada na
+# imagem (o helper do Hermes pula o rebuild quando nao e' necessario).
+(
+  HERMES_HOME="$HERMES_HOME" \
+    hermes web --host 0.0.0.0 --port "${HERMES_WEB_PORT:-9119}" --insecure --no-open
+) >/var/log/hermes-web.log 2>&1 &
+HERMES_WEB_PID=$!
+echo "[entrypoint] hermes web (dashboard) iniciado em 0.0.0.0:${HERMES_WEB_PORT:-9119} (pid=$HERMES_WEB_PID, log=/var/log/hermes-web.log)"
+
 exec "$@"

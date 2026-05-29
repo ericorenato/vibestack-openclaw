@@ -132,6 +132,12 @@ RUN uv venv --python 3.11 /opt/hermes-agent/venv \
 # libs de sistema do Chromium via apt (roda como root no build, sem prompt).
 RUN cd /opt/hermes-agent && npx --yes playwright install --with-deps chromium
 
+# Pre-build do dashboard web (Vite/React) que o `hermes web` serve na 9119.
+# Compila pra hermes_cli/web_dist (mesmo comando do erro de --skip-build do
+# Hermes). Assim o entrypoint sobe a UI rapido; sem isso ele compilaria a cada
+# boot. Se a UI nao precisar rebuild, o helper interno do Hermes pula sozinho.
+RUN cd /opt/hermes-agent/web && npm install && npm run build
+
 # Wrapper: limpa PYTHONPATH/PYTHONHOME (igual ao install.sh oficial, pra nao
 # herdar o venv do middleware/uv) e exec o hermes do venv do Hermes.
 RUN printf '#!/usr/bin/env bash\nunset PYTHONPATH PYTHONHOME\nexec /opt/hermes-agent/venv/bin/hermes "$@"\n' \
