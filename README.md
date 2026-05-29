@@ -7,6 +7,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 - Ollama no mesmo container — modelos locais (`llama3.2:3b`, `qwen2.5:7b`, etc.) sem dependência de API paga.
 - 70 tools MCP pra Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, datasets/pixels, product sets/items/feeds, **custom audiences**, **lookalikes**, **duplicação de campanhas/adsets/ads**) — agente cria/edita/lê/duplica/segmenta direto. 60 via CLI oficial + 10 via Graph API direta (audience/copies, que a CLI não cobre).
 - Bloco demarcado no `Dockerfile` pra "bakear" suas próprias CLIs/binários (gog, goplaces, wacli já vêm de exemplo).
+- **Hermes Agent** (NousResearch) no mesmo container como alternativa ao OpenClaw — API OpenAI-compatible em `http://127.0.0.1:8642/v1`, com acesso às **mesmas** tools MCP (meta-ads, media-editor). Veja [Hermes Agent](#hermes-agent-alternativa-ao-openclaw).
 
 ---
 
@@ -32,6 +33,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
   - [Passo 14 — (Opcional) Disparar cadeia de agentes via cron](#passo-14--opcional-disparar-cadeia-de-agentes-via-cron)
 - [Atualizar o projeto na VPS](#atualizar-o-projeto-na-vps)
 - [Baixar modelos no Ollama](#baixar-modelos-no-ollama)
+- [Hermes Agent (alternativa ao OpenClaw)](#hermes-agent-alternativa-ao-openclaw)
 - [Referência técnica](#referência-técnica)
 - [Troubleshooting](#troubleshooting)
 
@@ -39,7 +41,14 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 
 ## Arquitetura em uma frase
 
-Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, e **(c)** um middleware Python MCP que envelopa a CLI oficial `meta-ads` da Meta como ~60 tools tipados pro agente.
+Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, **(c)** um middleware Python MCP que envelopa a CLI oficial `meta-ads` da Meta como ~60 tools tipados pro agente, **(d)** o Claw3D Studio na 3000, e **(e)** o **Hermes Agent** na 8642 — uma alternativa ao OpenClaw que compartilha as mesmas tools MCP. Tudo em **portas separadas**, então coexistem sem conflito.
+
+| Serviço            | Porta (loopback) | Processo                          |
+|--------------------|------------------|-----------------------------------|
+| OpenClaw gateway   | 18789            | `openclaw gateway` (principal)    |
+| Ollama             | 11434            | `ollama serve`                    |
+| Claw3D Studio      | 3000             | Next.js + socat                   |
+| Hermes API server  | 8642             | `hermes gateway` (api_server)     |
 
 O entrypoint registra o MCP automaticamente no boot via `openclaw mcp set`, propagando `ACCESS_TOKEN`/`AD_ACCOUNT_ID` pro processo filho.
 
@@ -500,14 +509,81 @@ Sugestões por tamanho:
 
 ---
 
+## Hermes Agent (alternativa ao OpenClaw)
+
+O [Hermes Agent](https://github.com/NousResearch/hermes-agent) da NousResearch vem
+**baked no mesmo container** como uma alternativa ao OpenClaw. Ele é clonado do git no
+build (pinado por `HERMES_REF`, igual OpenClaw/Claw3D), instalado num venv Python 3.11
+com o extra `[all]` (browser/Playwright, mcp, messaging, etc.), e **compartilha as mesmas
+tools MCP** que o OpenClaw — `meta-ads` e `media-editor` (mesmos scripts em
+`/app/middleware`, mesmo venv).
+
+Como roda numa **porta separada** (8642), coexiste com o OpenClaw (18789), Claw3D (3000)
+e Ollama (11434) sem conflito — são processos independentes no mesmo container.
+
+### O que o entrypoint faz no boot
+
+1. **Registra as tools** fazendo um merge idempotente em `${HERMES_DATA_DIR}/config.yaml`
+   sob a chave `mcp_servers` (preservando qualquer outra config que você editar). Sem
+   filtro de `tools`, o Hermes habilita todas as tools de cada server.
+2. **Sobe o `hermes gateway`** em background. A única plataforma que sobe sem token é o
+   `api_server` (OpenAI-compatible), que **exige `HERMES_API_SERVER_KEY`** pra iniciar.
+
+> O provider/modelo **não** é configurado pelo build (decisão de projeto). Igual ao
+> OpenClaw, você configura depois — veja abaixo.
+
+### Configurar o provider/modelo (uma vez)
+
+```bash
+# Wizard interativo de modelo/provider:
+docker compose exec -it openclaw-vibestack hermes model
+
+# ...ou edite direto o config.yaml (persiste no volume ${HERMES_DATA_DIR}):
+#   ${HERMES_DATA_DIR}/config.yaml  -> chave model: { provider, default }
+```
+
+Providers suportados incluem OpenRouter, Anthropic, Nous Portal, Ollama local
+(`http://127.0.0.1:11434`), e outros — escolha no wizard. Enquanto não houver provider,
+o api_server sobe mas as completions falham.
+
+### Acessar a API
+
+A porta 8642 é publicada **apenas em loopback** na VPS. Do laptop:
+
+```bash
+ssh -N -L 8642:127.0.0.1:8642 root@YOUR_VPS_IP
+```
+
+```bash
+# Health check (sem auth):
+curl http://127.0.0.1:8642/health
+
+# Listar modelos / chat (Bearer = HERMES_API_SERVER_KEY do .env):
+curl http://127.0.0.1:8642/v1/models \
+  -H "Authorization: Bearer $HERMES_API_SERVER_KEY"
+```
+
+Qualquer frontend OpenAI-compatible (Open WebUI, LobeChat, etc.) conecta apontando pra
+`http://127.0.0.1:8642/v1` com a `HERMES_API_SERVER_KEY` como API key. O modelo exposto
+chama-se `hermes-agent`.
+
+### Confirmar as tools registradas
+
+```bash
+docker compose exec openclaw-vibestack hermes mcp list   # lista meta-ads e media-editor
+docker compose logs openclaw-vibestack | grep hermes      # ver o boot do gateway
+```
+
+---
+
 ## Referência técnica
 
 ### Estrutura do repo
 
 ```
 .
-├── Dockerfile               # node:24 + openclaw + ollama + meta-ads CLI + middleware
-├── entrypoint.sh            # ollama serve + openclaw mcp set + exec CMD
+├── Dockerfile               # node:24 + openclaw + ollama + meta-ads CLI + middleware + claw3d + hermes
+├── entrypoint.sh            # ollama serve + openclaw mcp set + claw3d + hermes gateway + exec CMD
 ├── docker-compose.yml       # serviço único openclaw-vibestack, env, volumes, portas
 ├── middleware/
 │   ├── meta_ads_cli_mcp.py  # MCP server Python — 70 tools (CLI + Graph API)

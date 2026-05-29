@@ -6,7 +6,7 @@ ARG OPENCLAW_REF=main
 ENV HOME=/root
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates curl socat zstd python3 python3-pip ffmpeg \
+ && apt-get install -y --no-install-recommends git ca-certificates curl socat zstd python3 python3-pip ffmpeg ripgrep \
  && rm -rf /var/lib/apt/lists/*
 
 # uv: instala Python 3.12 inline (bookworm so traz ate 3.11).
@@ -108,6 +108,35 @@ RUN git clone --depth 1 --branch "${CLAW3D_REF}" "${CLAW3D_REPO}" /opt/claw3d \
  && NEXT_TELEMETRY_DISABLED=1 \
     NEXT_PUBLIC_GATEWAY_URL="${CLAW3D_BUILD_GATEWAY_URL}" \
     npm run build
+
+# ============================================================
+# Hermes Agent — alternativa ao OpenClaw (NousResearch).
+# Mesmo padrao dos blocos acima: clone pinado + venv uv (Python 3.11) +
+# extra [all] (browser, mcp, messaging, etc.). O entrypoint sobe o
+# api_server OpenAI-compatible na 8642 e registra os MESMOS middlewares
+# MCP (meta-ads, media-editor) que o OpenClaw usa.
+#
+# Codigo fica em /opt/hermes-agent (fora do volume); dados em
+# /root/.hermes (HERMES_HOME, montado como volume pelo compose).
+# ============================================================
+ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
+ARG HERMES_REF=main
+
+RUN git clone --depth 1 --branch "${HERMES_REF}" "${HERMES_REPO}" /opt/hermes-agent
+
+# venv 3.11 (Hermes exige >=3.11; uv baixa inline) + instala tudo ([all]).
+RUN uv venv --python 3.11 /opt/hermes-agent/venv \
+ && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache -e '/opt/hermes-agent[all]'
+
+# Playwright/Chromium (browser tool) — "instalar tudo". --with-deps puxa as
+# libs de sistema do Chromium via apt (roda como root no build, sem prompt).
+RUN cd /opt/hermes-agent && npx --yes playwright install --with-deps chromium
+
+# Wrapper: limpa PYTHONPATH/PYTHONHOME (igual ao install.sh oficial, pra nao
+# herdar o venv do middleware/uv) e exec o hermes do venv do Hermes.
+RUN printf '#!/usr/bin/env bash\nunset PYTHONPATH PYTHONHOME\nexec /opt/hermes-agent/venv/bin/hermes "$@"\n' \
+      > /usr/local/bin/hermes \
+ && chmod +x /usr/local/bin/hermes
 
 # Middleware MCP que envelopa a CLI 'meta' como tools tipados para o openclaw.
 COPY middleware /app/middleware

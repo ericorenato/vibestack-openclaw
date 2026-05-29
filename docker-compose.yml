@@ -30,11 +30,20 @@ services:
       - CLAW3D_PORT=${CLAW3D_PORT:-3000}
       - UPSTREAM_ALLOWLIST=localhost,127.0.0.1
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # Hermes — api_server OpenAI-compatible (alternativa ao OpenClaw).
+      # API_SERVER_KEY e' obrigatorio pro gateway subir o servidor na 8642.
+      # As tools (meta-ads/media-editor) reusam as vars Meta/B2 ja definidas acima.
+      - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-}
+      - HERMES_API_PORT=${HERMES_API_PORT:-8642}
     volumes:
       # UM mount só, abrangendo tudo do OpenClaw
       - ${OPENCLAW_DATA_DIR}:/root/.openclaw
       # Ollama em mount separado (faz sentido — outro app)
       - ${OLLAMA_DATA_DIR}:/var/lib/ollama
+      # Hermes — HERMES_HOME (config.yaml, .env, sessions, skills, memories).
+      # Persistente pra que a config do provider editada pelo usuario sobreviva a rebuilds.
+      # Default /root/.hermes funciona na VPS (HOME=/root); install.sh ajusta no Mac/Windows.
+      - ${HERMES_DATA_DIR:-/root/.hermes}:/root/.hermes
     ports:
       - "127.0.0.1:${OPENCLAW_GATEWAY_PORT}:18789"
       # Loopback do host pra alcancar o ollama interno (opcional, SSH tunnel):
@@ -43,6 +52,9 @@ services:
       # Claw3D Studio — UI 3D dos agentes via Next.js:
       #   ssh -N -L 3000:127.0.0.1:3000 root@VPS  -> http://localhost:3000
       - "127.0.0.1:${CLAW3D_PORT:-3000}:3000"
+      # Hermes — API OpenAI-compatible (porta separada, coexiste com o OpenClaw):
+      #   ssh -N -L 8642:127.0.0.1:8642 root@VPS  -> http://localhost:8642/v1
+      - "127.0.0.1:${HERMES_API_PORT:-8642}:8642"
     command:
       - "openclaw"
       - "gateway"
