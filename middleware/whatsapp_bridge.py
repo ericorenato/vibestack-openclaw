@@ -24,7 +24,7 @@ Env:
   WA_BRIDGE_MODEL           modelo exposto (default 'hermes-agent')
   WA_BRIDGE_SESSION_PREFIX  prefixo da sessão por contato (default 'wa')
   WA_BRIDGE_ALLOWED_NUMBERS CSV de números permitidos (vazio = todos; recomendado preencher)
-  WA_BRIDGE_UPSTREAM_TIMEOUT timeout (s) da chamada ao agente (default 300 — tool calls demoram)
+  WA_BRIDGE_UPSTREAM_TIMEOUT timeout (s) da chamada ao agente (default 0 = ILIMITADO; localhost)
   EVOLUTION_BASE_URL        base do Evolution Go (default http://evolution-go:8080)
   EVOLUTION_INSTANCE_TOKEN  token da instância (apikey de envio)
 """
@@ -46,7 +46,12 @@ UPSTREAM = os.environ.get("WA_BRIDGE_UPSTREAM", "http://127.0.0.1:8642").rstrip(
 UPSTREAM_KEY = os.environ.get("WA_BRIDGE_UPSTREAM_KEY", "")
 MODEL = os.environ.get("WA_BRIDGE_MODEL", "hermes-agent")
 SESSION_PREFIX = os.environ.get("WA_BRIDGE_SESSION_PREFIX", "wa")
-UPSTREAM_TIMEOUT = int(os.environ.get("WA_BRIDGE_UPSTREAM_TIMEOUT", "900"))  # tarefas longas (criativo etc.)
+# Timeout da chamada ao agente. 0 = ILIMITADO (default) — o agente roda quanto
+# precisar e a resposta sai quando terminar. A chamada e' localhost (mesmo
+# container), entao segurar a conexao e' seguro; o bridge ja' respondeu 200 ao
+# webhook e processa em thread, sem nada esperando do outro lado.
+UPSTREAM_TIMEOUT = int(os.environ.get("WA_BRIDGE_UPSTREAM_TIMEOUT", "0"))
+_TIMEOUT = UPSTREAM_TIMEOUT if UPSTREAM_TIMEOUT > 0 else None
 ACK_AFTER = int(os.environ.get("WA_BRIDGE_ACK_AFTER", "20"))  # avisa "processando" se passar disso (0 = off)
 # OpenClaw: agente especifico (binding) opcional pra rota desse canal.
 OPENCLAW_AGENT_ID = os.environ.get("WA_BRIDGE_OPENCLAW_AGENT", "").strip()
@@ -189,7 +194,7 @@ def _ask_hermes(number: str, text: str) -> str:
             "X-Hermes-Session-Id": _session_key(number),
         },
     )
-    with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
         out = json.loads(resp.read().decode("utf-8"))
     try:
         return out["choices"][0]["message"]["content"] or "(resposta vazia)"
@@ -207,7 +212,7 @@ def _ask_openclaw(number: str, text: str) -> str:
     cmd = ["openclaw", "agent", "--message", text, "--session-key", _session_key(number), "--json"]
     if OPENCLAW_AGENT_ID:
         cmd += ["--agent", OPENCLAW_AGENT_ID]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=UPSTREAM_TIMEOUT, check=False)
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=_TIMEOUT, check=False)
     if r.returncode != 0:
         return f"(openclaw agent falhou: {(r.stderr or r.stdout).strip()[:200]})"
     out_raw = r.stdout.strip()

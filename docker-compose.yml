@@ -60,7 +60,7 @@ services:
       - WA_BRIDGE_PORT=${WA_BRIDGE_PORT:-8765}
       - WA_BRIDGE_ALLOWED_NUMBERS=${WA_BRIDGE_ALLOWED_NUMBERS:-}
       # Tarefas longas (gerar criativo etc.): timeout do agente e aviso de "processando".
-      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-900}
+      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-0}
       - WA_BRIDGE_ACK_AFTER=${WA_BRIDGE_ACK_AFTER:-20}
     volumes:
       # UM mount só, abrangendo tudo do OpenClaw
