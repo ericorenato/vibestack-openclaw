@@ -138,6 +138,12 @@ RUN cd /opt/hermes-agent && npx --yes playwright install --with-deps chromium
 # boot. Se a UI nao precisar rebuild, o helper interno do Hermes pula sozinho.
 RUN cd /opt/hermes-agent/web && npm install && npm run build
 
+# Pre-build do TUI (ui-tui) que a aba "Chat" do dashboard spawna via `hermes --tui`.
+# Sem isso, o 1o `hermes --tui` (inclusive o que a aba Chat dispara) faz npm
+# install + build em runtime — o que derruba o WebSocket do chat por timeout/erro.
+# Gera ui-tui/dist/entry.js; em runtime o Hermes detecta que ja' esta' buildado e pula.
+RUN cd /opt/hermes-agent/ui-tui && npm install && npm run build
+
 # Wrapper: limpa PYTHONPATH/PYTHONHOME (igual ao install.sh oficial, pra nao
 # herdar o venv do middleware/uv) e exec o hermes do venv do Hermes.
 RUN printf '#!/usr/bin/env bash\nunset PYTHONPATH PYTHONHOME\nexec /opt/hermes-agent/venv/bin/hermes "$@"\n' \
