@@ -53,7 +53,7 @@ EVOLUTION_BASE_URL = os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8
 EVOLUTION_INSTANCE_TOKEN = os.environ.get("EVOLUTION_INSTANCE_TOKEN", "")
 # Provisionamento idempotente da instancia (no boot do bridge):
 EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")          # GLOBAL (admin): criar/listar instancia
-EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE", "default")  # nome da instancia
+EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE", "vibestack")  # nome da instancia
 # URL do webhook que o Evolution deve chamar = este bridge (DNS do compose).
 PUBLIC_WEBHOOK_URL = os.environ.get("WA_BRIDGE_PUBLIC_URL", f"http://openclaw-vibestack:{PORT}/webhook")
 # Proxy opcional da instancia (Static Residential do Webshare etc.). Vazio = sem proxy.
@@ -300,21 +300,26 @@ def _provision() -> None:
             if _instance_exists():
                 _log(f"instancia '{EVOLUTION_INSTANCE}' ja existe — reaproveitando (nao recrio).")
             else:
-                body: dict = {"name": EVOLUTION_INSTANCE, "token": EVOLUTION_INSTANCE_TOKEN, "webhook": PUBLIC_WEBHOOK_URL}
+                # O CreateStruct do Evolution NAO aceita 'webhook' (so name/token/proxy);
+                # o webhook e' definido no connect (webhookUrl).
+                body: dict = {"name": EVOLUTION_INSTANCE, "token": EVOLUTION_INSTANCE_TOKEN}
                 if PROXY_OK:
                     body["proxy"] = PROXY
                 _evo_request("POST", "/instance/create", body=body, admin=True)
-                _log(f"instancia '{EVOLUTION_INSTANCE}' criada (webhook={PUBLIC_WEBHOOK_URL}, proxy={'sim' if PROXY_OK else 'nao'}).")
+                _log(f"instancia '{EVOLUTION_INSTANCE}' criada (proxy={'sim' if PROXY_OK else 'nao'}).")
+            # webhook + eventos no CONNECT (idempotente — reaplica mesmo se a instancia ja existia).
             try:
-                _evo_request("POST", "/instance/connect", body={})
-            except urllib.error.HTTPError:
-                pass
+                _evo_request("POST", "/instance/connect",
+                             body={"webhookUrl": PUBLIC_WEBHOOK_URL, "subscribe": ["MESSAGE"]})
+                _log(f"connect ok — webhook={PUBLIC_WEBHOOK_URL}, eventos=[MESSAGE].")
+            except urllib.error.HTTPError as e:
+                _log(f"connect HTTP {e.code} (ok se ja conectado): {e.read()[:120]!r}")
             try:
                 _, st = _evo_request("GET", "/instance/status")
                 _log(f"status da instancia: {st}")
             except urllib.error.HTTPError:
                 pass
-            _log(f"provisionamento ok. Se nao estiver 'connected', pareie o QR no Manager: {EVOLUTION_BASE_URL}/manager (ou http://127.0.0.1:8080/manager).")
+            _log(f"provisionamento ok. Se nao estiver 'connected', pareie o QR no Manager: http://127.0.0.1:8080/manager.")
             return
         except urllib.error.HTTPError as e:
             if e.code == 503:

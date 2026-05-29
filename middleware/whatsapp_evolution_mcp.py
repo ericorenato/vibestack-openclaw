@@ -16,7 +16,7 @@ Env:
   EVOLUTION_BASE_URL        base da API (default http://evolution-go:8080, DNS do compose)
   EVOLUTION_API_KEY         GLOBAL_API_KEY (admin/create)
   EVOLUTION_INSTANCE_TOKEN  token da instância (send/qr/status); definido no create
-  EVOLUTION_INSTANCE        nome da instância (default 'default')
+  EVOLUTION_INSTANCE        nome da instância (default 'vibestack')
 """
 import json
 import os
@@ -31,7 +31,7 @@ mcp = FastMCP("whatsapp-evolution")
 BASE_URL = os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8080").rstrip("/")
 GLOBAL_KEY = os.environ.get("EVOLUTION_API_KEY", "")
 INSTANCE_TOKEN = os.environ.get("EVOLUTION_INSTANCE_TOKEN", "")
-INSTANCE_NAME = os.environ.get("EVOLUTION_INSTANCE", "default")
+INSTANCE_NAME = os.environ.get("EVOLUTION_INSTANCE", "vibestack")
 
 
 def _req(method: str, path: str, body: dict | None = None, admin: bool = False) -> Any:

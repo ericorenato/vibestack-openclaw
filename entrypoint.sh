@@ -63,7 +63,7 @@ register_mcp media-editor "{\"command\":\"/opt/middleware-venv/bin/python\",\"ar
 if [ -z "${EVOLUTION_API_KEY:-}" ]; then
   echo "[entrypoint] AVISO: EVOLUTION_API_KEY vazio — whatsapp MCP vai falhar. Configure no .env."
 fi
-register_mcp whatsapp "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/whatsapp_evolution_mcp.py\"],\"env\":{\"EVOLUTION_BASE_URL\":\"${EVOLUTION_BASE_URL:-http://evolution-go:8080}\",\"EVOLUTION_API_KEY\":\"${EVOLUTION_API_KEY:-}\",\"EVOLUTION_INSTANCE_TOKEN\":\"${EVOLUTION_INSTANCE_TOKEN:-}\",\"EVOLUTION_INSTANCE\":\"${EVOLUTION_INSTANCE:-default}\"}}"
+register_mcp whatsapp "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/whatsapp_evolution_mcp.py\"],\"env\":{\"EVOLUTION_BASE_URL\":\"${EVOLUTION_BASE_URL:-http://evolution-go:8080}\",\"EVOLUTION_API_KEY\":\"${EVOLUTION_API_KEY:-}\",\"EVOLUTION_INSTANCE_TOKEN\":\"${EVOLUTION_INSTANCE_TOKEN:-}\",\"EVOLUTION_INSTANCE\":\"${EVOLUTION_INSTANCE:-vibestack}\"}}"
 
 # Acrescente novos MCP servers aqui no mesmo padrao:
 # register_mcp outro-server '{"command":"...","args":[...]}'
@@ -92,7 +92,7 @@ B2_ENDPOINT_URL="${B2_ENDPOINT_URL:-}" \
 EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
 EVOLUTION_API_KEY="${EVOLUTION_API_KEY:-}" \
 EVOLUTION_INSTANCE_TOKEN="${EVOLUTION_INSTANCE_TOKEN:-}" \
-EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE:-default}" \
+EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE:-vibestack}" \
 HERMES_APPROVALS_MODE="${HERMES_APPROVALS_MODE:-off}" \
 /opt/hermes-agent/venv/bin/python - <<'PYEOF'
 import os, sys
@@ -149,7 +149,7 @@ servers["whatsapp"] = {
         "EVOLUTION_BASE_URL": os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8080"),
         "EVOLUTION_API_KEY": os.environ.get("EVOLUTION_API_KEY", ""),
         "EVOLUTION_INSTANCE_TOKEN": os.environ.get("EVOLUTION_INSTANCE_TOKEN", ""),
-        "EVOLUTION_INSTANCE": os.environ.get("EVOLUTION_INSTANCE", "default"),
+        "EVOLUTION_INSTANCE": os.environ.get("EVOLUTION_INSTANCE", "vibestack"),
     },
 }
 
@@ -241,7 +241,7 @@ if [ -n "${EVOLUTION_INSTANCE_TOKEN:-}" ] && { [ "$WA_BRIDGE_AGENT" = "openclaw"
     WA_BRIDGE_PUBLIC_URL="${WA_BRIDGE_PUBLIC_URL:-http://openclaw-vibestack:${WA_BRIDGE_PORT:-8765}/webhook}" \
     EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
     EVOLUTION_API_KEY="${EVOLUTION_API_KEY:-}" \
-    EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE:-default}" \
+    EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE:-vibestack}" \
     EVOLUTION_INSTANCE_TOKEN="${EVOLUTION_INSTANCE_TOKEN}" \
     EVOLUTION_PROXY_PROTOCOL="${EVOLUTION_PROXY_PROTOCOL:-http}" \
     EVOLUTION_PROXY_HOST="${EVOLUTION_PROXY_HOST:-}" \

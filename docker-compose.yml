@@ -41,7 +41,7 @@ services:
       - EVOLUTION_BASE_URL=http://evolution-go:8080
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
       - EVOLUTION_INSTANCE_TOKEN=${EVOLUTION_INSTANCE_TOKEN:-}
-      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-vibestack}
       # Proxy opcional da instancia WhatsApp (Static Residential do Webshare etc.).
       # Preenchido = o bridge cria a instancia ja' atras do proxy. Vazio = sem proxy.
       - EVOLUTION_PROXY_PROTOCOL=${EVOLUTION_PROXY_PROTOCOL:-http}
