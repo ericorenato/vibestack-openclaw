@@ -34,6 +34,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,6 +51,20 @@ UPSTREAM_TIMEOUT = int(os.environ.get("WA_BRIDGE_UPSTREAM_TIMEOUT", "300"))
 OPENCLAW_AGENT_ID = os.environ.get("WA_BRIDGE_OPENCLAW_AGENT", "").strip()
 EVOLUTION_BASE_URL = os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8080").rstrip("/")
 EVOLUTION_INSTANCE_TOKEN = os.environ.get("EVOLUTION_INSTANCE_TOKEN", "")
+# Provisionamento idempotente da instancia (no boot do bridge):
+EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")          # GLOBAL (admin): criar/listar instancia
+EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE", "default")  # nome da instancia
+# URL do webhook que o Evolution deve chamar = este bridge (DNS do compose).
+PUBLIC_WEBHOOK_URL = os.environ.get("WA_BRIDGE_PUBLIC_URL", f"http://openclaw-vibestack:{PORT}/webhook")
+# Proxy opcional da instancia (Static Residential do Webshare etc.). Vazio = sem proxy.
+PROXY = {
+    "protocol": os.environ.get("EVOLUTION_PROXY_PROTOCOL", "http"),
+    "host": os.environ.get("EVOLUTION_PROXY_HOST", ""),
+    "port": os.environ.get("EVOLUTION_PROXY_PORT", ""),
+    "username": os.environ.get("EVOLUTION_PROXY_USERNAME", ""),
+    "password": os.environ.get("EVOLUTION_PROXY_PASSWORD", ""),
+}
+PROXY_OK = all(PROXY[k] for k in ("host", "port", "username", "password"))
 
 _allowed_raw = os.environ.get("WA_BRIDGE_ALLOWED_NUMBERS", "").strip()
 ALLOWED = {re.sub(r"\D", "", n) for n in _allowed_raw.split(",") if n.strip()}
@@ -247,11 +262,78 @@ class Handler(BaseHTTPRequestHandler):
         threading.Thread(target=_process, args=(number, text), daemon=True).start()
 
 
+def _evo_request(method: str, path: str, body: dict | None = None, admin: bool = False) -> tuple[int, object]:
+    """Request ao Evolution Go. admin=True usa a GLOBAL key; senao o token da instancia.
+    Levanta urllib.error.HTTPError em erro (tratado por quem chama)."""
+    key = EVOLUTION_API_KEY if admin else EVOLUTION_INSTANCE_TOKEN
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    headers = {"apikey": key}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(f"{EVOLUTION_BASE_URL}{path}", data=data, method=method, headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read().decode("utf-8")
+        return resp.status, (json.loads(raw) if raw else {})
+
+
+def _instance_exists() -> bool:
+    """True se a instancia (por nome) ja existe no Evolution."""
+    _, out = _evo_request("GET", "/instance/all", admin=True)
+    items = out.get("data") if isinstance(out, dict) else out
+    if not isinstance(items, list):
+        return False
+    return any(isinstance(i, dict) and i.get("name") == EVOLUTION_INSTANCE for i in items)
+
+
+def _provision() -> None:
+    """Garante a instancia (idempotente): cria so se faltar, com webhook+token+proxy,
+    conecta e reporta status. Roda em background com retry (espera evolution-go/licenca).
+
+    Tira a criacao de instancia do agente: o canal nasce certo no boot e o agente
+    so' USA (envia via MCP, recebe via webhook). Nunca recria uma instancia existente.
+    """
+    if not EVOLUTION_API_KEY:
+        _log("provisionamento pulado: EVOLUTION_API_KEY (global) ausente — defina pra criar a instancia automaticamente.")
+        return
+    for attempt in range(1, 31):
+        try:
+            if _instance_exists():
+                _log(f"instancia '{EVOLUTION_INSTANCE}' ja existe — reaproveitando (nao recrio).")
+            else:
+                body: dict = {"name": EVOLUTION_INSTANCE, "token": EVOLUTION_INSTANCE_TOKEN, "webhook": PUBLIC_WEBHOOK_URL}
+                if PROXY_OK:
+                    body["proxy"] = PROXY
+                _evo_request("POST", "/instance/create", body=body, admin=True)
+                _log(f"instancia '{EVOLUTION_INSTANCE}' criada (webhook={PUBLIC_WEBHOOK_URL}, proxy={'sim' if PROXY_OK else 'nao'}).")
+            try:
+                _evo_request("POST", "/instance/connect", body={})
+            except urllib.error.HTTPError:
+                pass
+            try:
+                _, st = _evo_request("GET", "/instance/status")
+                _log(f"status da instancia: {st}")
+            except urllib.error.HTTPError:
+                pass
+            _log(f"provisionamento ok. Se nao estiver 'connected', pareie o QR no Manager: {EVOLUTION_BASE_URL}/manager (ou http://127.0.0.1:8080/manager).")
+            return
+        except urllib.error.HTTPError as e:
+            if e.code == 503:
+                _log(f"Evolution sem LICENCA ativa (503). Ative no Manager e reinicie o container. (tentativa {attempt})")
+                return
+            _log(f"provisionamento: HTTP {e.code} — {e.read()[:160]!r} (tentativa {attempt})")
+        except Exception as e:  # noqa: BLE001 — connectivity: evolution-go pode nao estar pronto
+            _log(f"aguardando evolution-go... ({e}) (tentativa {attempt})")
+        time.sleep(10)
+    _log("provisionamento desistiu — crie a instancia manualmente (wa_create_instance) ou reinicie depois de ativar a licenca.")
+
+
 def main() -> None:
     if not EVOLUTION_INSTANCE_TOKEN:
         _log("AVISO: EVOLUTION_INSTANCE_TOKEN vazio — nao vou conseguir responder no WhatsApp.")
     if not ALLOWED:
         _log("AVISO: WA_BRIDGE_ALLOWED_NUMBERS vazio — QUALQUER numero que mandar msg fala com o agente.")
+    # Provisiona a instancia em background (nao bloqueia o servidor de webhook).
+    threading.Thread(target=_provision, daemon=True).start()
     dest = f"openclaw CLI (agent={OPENCLAW_AGENT_ID or 'default'})" if AGENT == "openclaw" else f"hermes {UPSTREAM}"
     _log(f"escutando em 0.0.0.0:{PORT} (webhook POST /webhook) -> {dest} -> resposta via {EVOLUTION_BASE_URL}")
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

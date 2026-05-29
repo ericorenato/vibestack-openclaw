@@ -93,6 +93,7 @@ EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
 EVOLUTION_API_KEY="${EVOLUTION_API_KEY:-}" \
 EVOLUTION_INSTANCE_TOKEN="${EVOLUTION_INSTANCE_TOKEN:-}" \
 EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE:-default}" \
+HERMES_APPROVALS_MODE="${HERMES_APPROVALS_MODE:-off}" \
 /opt/hermes-agent/venv/bin/python - <<'PYEOF'
 import os, sys
 from pathlib import Path
@@ -151,6 +152,16 @@ servers["whatsapp"] = {
         "EVOLUTION_INSTANCE": os.environ.get("EVOLUTION_INSTANCE", "default"),
     },
 }
+
+# Aprovacao de comandos: num canal headless (api_server/WhatsApp) NAO ha quem
+# responda o prompt de aprovacao -> o agente TRAVA ate o timeout do bridge.
+# Definimos approvals.mode (default 'off') pra auto-aprovar. So' grava se a chave
+# ainda nao existe, preservando uma escolha do usuario.
+approvals = cfg.get("approvals")
+if not isinstance(approvals, dict):
+    approvals = {}
+    cfg["approvals"] = approvals
+approvals.setdefault("mode", os.environ.get("HERMES_APPROVALS_MODE", "off"))
 
 tmp = cfg_path.with_suffix(".yaml.tmp")
 tmp.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
@@ -227,8 +238,16 @@ if [ -n "${EVOLUTION_INSTANCE_TOKEN:-}" ] && { [ "$WA_BRIDGE_AGENT" = "openclaw"
     WA_BRIDGE_MODEL="${WA_BRIDGE_MODEL:-hermes-agent}" \
     WA_BRIDGE_OPENCLAW_AGENT="${WA_BRIDGE_OPENCLAW_AGENT:-}" \
     WA_BRIDGE_ALLOWED_NUMBERS="${WA_BRIDGE_ALLOWED_NUMBERS:-}" \
+    WA_BRIDGE_PUBLIC_URL="${WA_BRIDGE_PUBLIC_URL:-http://openclaw-vibestack:${WA_BRIDGE_PORT:-8765}/webhook}" \
     EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
+    EVOLUTION_API_KEY="${EVOLUTION_API_KEY:-}" \
+    EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE:-default}" \
     EVOLUTION_INSTANCE_TOKEN="${EVOLUTION_INSTANCE_TOKEN}" \
+    EVOLUTION_PROXY_PROTOCOL="${EVOLUTION_PROXY_PROTOCOL:-http}" \
+    EVOLUTION_PROXY_HOST="${EVOLUTION_PROXY_HOST:-}" \
+    EVOLUTION_PROXY_PORT="${EVOLUTION_PROXY_PORT:-}" \
+    EVOLUTION_PROXY_USERNAME="${EVOLUTION_PROXY_USERNAME:-}" \
+    EVOLUTION_PROXY_PASSWORD="${EVOLUTION_PROXY_PASSWORD:-}" \
       /opt/middleware-venv/bin/python /app/middleware/whatsapp_bridge.py
   ) >/var/log/whatsapp-bridge.log 2>&1 &
   WA_BRIDGE_PID=$!
