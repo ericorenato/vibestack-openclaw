@@ -223,18 +223,30 @@ else
 fi
 
 # Dashboard web do Hermes (Vite/React) — a "pagina web" de gestao/chat.
-# Bind 0.0.0.0 pra o Docker publicar; --insecure desliga o auth-gate (que e'
-# obrigatorio em bind nao-loopback). Como a porta so' e' publicada em
-# 127.0.0.1 no host (acesso via SSH tunnel na VPS), seguimos o mesmo modelo
-# loopback-sem-gate do Claw3D. Sem --skip-build: usa a UI ja' pre-buildada na
-# imagem (o helper do Hermes pula o rebuild quando nao e' necessario).
-# --tui: habilita a aba "Chat" embutida na UI (PTY que spawna `hermes --tui`);
-# sem ela o dashboard so' mostra config/sessoes, sem chat ao vivo.
+# IMPORTANTE: bind em 127.0.0.1 (loopback) dentro do container, NAO 0.0.0.0.
+# O dashboard tem defesas de DNS-rebinding/Origin/Host no WebSocket que ficam
+# rigidas em bind nao-loopback: com 0.0.0.0 a pagina HTTP carrega mas o WS da
+# aba Chat e' rejeitado ("WebSocket connection failed"). Em loopback o servidor
+# trata a conexao como local/confiavel e o WS passa (a pagina usa o token
+# embutido — sem precisar de --insecure). Publicamos via socat (TCP-puro, o
+# WebSocket passa transparente). Mesmo padrao do Claw3D logo acima.
+#
+# --tui: habilita a aba "Chat" embutida (PTY que spawna `hermes --tui`); sem ela
+# o dashboard so' mostra config/sessoes. O ui-tui ja' vem pre-buildado na imagem.
+HERMES_WEB_PUBLIC_PORT="${HERMES_WEB_PORT:-9119}"
+HERMES_WEB_INTERNAL_PORT="${HERMES_WEB_INTERNAL_PORT:-9120}"
 (
   HERMES_HOME="$HERMES_HOME" \
-    hermes dashboard --host 0.0.0.0 --port "${HERMES_WEB_PORT:-9119}" --insecure --no-open --tui
+    hermes dashboard --host 127.0.0.1 --port "$HERMES_WEB_INTERNAL_PORT" --no-open --tui
 ) >/var/log/hermes-web.log 2>&1 &
 HERMES_WEB_PID=$!
-echo "[entrypoint] hermes dashboard iniciado em 0.0.0.0:${HERMES_WEB_PORT:-9119} (pid=$HERMES_WEB_PID, chat-tab=on, log=/var/log/hermes-web.log)"
+echo "[entrypoint] hermes dashboard iniciado em 127.0.0.1:$HERMES_WEB_INTERNAL_PORT (pid=$HERMES_WEB_PID, chat-tab=on, log=/var/log/hermes-web.log)"
+
+socat \
+  TCP-LISTEN:"$HERMES_WEB_PUBLIC_PORT",fork,reuseaddr \
+  TCP:127.0.0.1:"$HERMES_WEB_INTERNAL_PORT" \
+  >/var/log/hermes-web-socat.log 2>&1 &
+HERMES_WEB_SOCAT_PID=$!
+echo "[entrypoint] socat bridge 0.0.0.0:$HERMES_WEB_PUBLIC_PORT -> 127.0.0.1:$HERMES_WEB_INTERNAL_PORT (pid=$HERMES_WEB_SOCAT_PID)"
 
 exec "$@"

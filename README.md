@@ -609,11 +609,12 @@ e Ollama (11434):
    filtro de `tools`, o Hermes habilita todas as tools de cada server.
 2. **Sobe o `hermes gateway`** em background. A única plataforma que sobe sem token é o
    `api_server` (OpenAI-compatible), que **exige `HERMES_API_SERVER_KEY`** pra iniciar.
-3. **Sobe o `hermes dashboard`** em background na 9119, com `--insecure` (sem
-   auth-gate) — seguro porque a porta só é publicada em loopback no host, acessível via
-   SSH tunnel na VPS (mesmo modelo do Claw3D). A UI já vem pré-buildada na imagem.
-   Sobe com `--tui`, que **habilita a aba "Chat"** embutida (sem ela o dashboard só
-   mostra config/sessões, sem chat ao vivo).
+3. **Sobe o `hermes dashboard`** em background, **bindado em loopback** (`127.0.0.1:9120`)
+   e publicado via **socat** em `9119` — mesmo padrão do Claw3D. O bind loopback é
+   obrigatório: o dashboard tem defesas de DNS-rebinding/Origin no WebSocket que rejeitam
+   a aba Chat quando o bind é `0.0.0.0`; em loopback o WS é tratado como confiável e o
+   socat (TCP-puro) leva o WebSocket transparente até a porta publicada. Sobe com `--tui`,
+   que **habilita a aba "Chat"** (o `ui-tui` já vem pré-buildado na imagem).
 
 > O provider/modelo **não** é configurado pelo build (decisão de projeto). Igual ao
 > OpenClaw, você configura depois — veja abaixo.
@@ -667,12 +668,16 @@ O `hermes dashboard` roda na **9119**, publicado **apenas em loopback** no host.
   # depois: http://127.0.0.1:9119
   ```
 
-Como subimos com `--insecure` (auth-gate desligado, OK atrás do loopback/túnel), **não pede
-login** — abre direto no dashboard, onde você gerencia config, providers, env e sessões de
-chat. Pra ver o log dele: `docker compose exec openclaw-vibestack tail -f /var/log/hermes-web.log`.
+Como o dashboard sobe bindado em loopback (e publicado via socat), o WebSocket da aba Chat
+é tratado como confiável e a página usa o token embutido — **não pede login**. Você gerencia
+config, providers, env e conversa com o agente na aba **Chat**. Logs:
+`docker compose exec openclaw-vibestack tail -f /var/log/hermes-web.log` (servidor) e
+`/var/log/hermes-web-socat.log` (bridge).
 
-> Se ao abrir vier 404/tela em branco, o build da UI pode não ter rodado — confira o log
-> acima; em último caso, `docker compose exec -it openclaw-vibestack hermes dashboard --host 0.0.0.0 --port 9119 --insecure --no-open` recompila a UI no boot.
+> Se a aba Chat der **"WebSocket connection failed"**, quase sempre é bind `0.0.0.0` (a
+> defesa de DNS-rebind/Origin do dashboard rejeita o WS) — o entrypoint contorna bindando
+> em `127.0.0.1:9120` + socat pra `9119`. Se vier 404/tela em branco, o build da UI pode
+> não ter rodado; confira o log do servidor.
 
 ### Confirmar as tools registradas
 
