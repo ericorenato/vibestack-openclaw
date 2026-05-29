@@ -46,7 +46,8 @@ UPSTREAM = os.environ.get("WA_BRIDGE_UPSTREAM", "http://127.0.0.1:8642").rstrip(
 UPSTREAM_KEY = os.environ.get("WA_BRIDGE_UPSTREAM_KEY", "")
 MODEL = os.environ.get("WA_BRIDGE_MODEL", "hermes-agent")
 SESSION_PREFIX = os.environ.get("WA_BRIDGE_SESSION_PREFIX", "wa")
-UPSTREAM_TIMEOUT = int(os.environ.get("WA_BRIDGE_UPSTREAM_TIMEOUT", "300"))
+UPSTREAM_TIMEOUT = int(os.environ.get("WA_BRIDGE_UPSTREAM_TIMEOUT", "900"))  # tarefas longas (criativo etc.)
+ACK_AFTER = int(os.environ.get("WA_BRIDGE_ACK_AFTER", "20"))  # avisa "processando" se passar disso (0 = off)
 # OpenClaw: agente especifico (binding) opcional pra rota desse canal.
 OPENCLAW_AGENT_ID = os.environ.get("WA_BRIDGE_OPENCLAW_AGENT", "").strip()
 EVOLUTION_BASE_URL = os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8080").rstrip("/")
@@ -256,16 +257,35 @@ def _reply_safe(number: str, text: str) -> None:
 
 
 def _process(number: str, text: str) -> None:
-    """Worker: pergunta ao agente e responde no WhatsApp. Roda fora do request HTTP."""
+    """Worker: pergunta ao agente e responde no WhatsApp. Roda fora do request HTTP.
+
+    Tarefas longas (gerar criativo etc.) podem levar minutos: avisamos "processando"
+    se passar de ACK_AFTER, e em erro/timeout mandamos um aviso (em vez de silencio).
+    """
+    _log(f"in  <- {number}: {text[:80]!r}")
+    done = threading.Event()
+
+    def _ack_if_slow() -> None:
+        if ACK_AFTER > 0 and not done.wait(ACK_AFTER):
+            _reply_safe(number, "🛠️ Tô processando — tarefas maiores levam alguns minutos. Já te respondo.")
+
+    threading.Thread(target=_ack_if_slow, daemon=True).start()
     try:
-        _log(f"in  <- {number}: {text[:80]!r}")
         reply = _ask_agent(number, text)
+        done.set()
         _send_whatsapp(number, reply)
         _log(f"out -> {number}: {reply[:80]!r}")
     except urllib.error.HTTPError as e:
+        done.set()
         _log(f"ERRO HTTP {e.code} processando {number}: {e.read()[:200]!r}")
+        _reply_safe(number, "⚠️ Deu um erro ao processar. Pode tentar de novo?")
     except Exception as e:  # noqa: BLE001
+        done.set()
         _log(f"ERRO processando {number}: {e}")
+        msg = ("⏳ A operação demorou mais que o limite e foi interrompida. "
+               "Tente dividir em passos menores, ou repita o pedido.") if "timed out" in str(e).lower() \
+              else "⚠️ Não consegui concluir agora. Pode tentar de novo?"
+        _reply_safe(number, msg)
 
 
 class Handler(BaseHTTPRequestHandler):
