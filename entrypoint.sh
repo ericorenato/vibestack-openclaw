@@ -230,9 +230,9 @@ fi
 # imagem (o helper do Hermes pula o rebuild quando nao e' necessario).
 (
   HERMES_HOME="$HERMES_HOME" \
-    hermes web --host 0.0.0.0 --port "${HERMES_WEB_PORT:-9119}" --insecure --no-open
+    hermes dashboard --host 0.0.0.0 --port "${HERMES_WEB_PORT:-9119}" --insecure --no-open
 ) >/var/log/hermes-web.log 2>&1 &
 HERMES_WEB_PID=$!
-echo "[entrypoint] hermes web (dashboard) iniciado em 0.0.0.0:${HERMES_WEB_PORT:-9119} (pid=$HERMES_WEB_PID, log=/var/log/hermes-web.log)"
+echo "[entrypoint] hermes dashboard iniciado em 0.0.0.0:${HERMES_WEB_PORT:-9119} (pid=$HERMES_WEB_PID, log=/var/log/hermes-web.log)"
 
 exec "$@"
