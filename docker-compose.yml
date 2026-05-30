@@ -22,6 +22,8 @@ services:
       - ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      # AtlasCloud — MCP oficial (hub de modelos). Auth so' por API key via env.
+      - ATLASCLOUD_API_KEY=${ATLASCLOUD_API_KEY:-}
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       # Hermes — api_server OpenAI-compatible (alternativa ao OpenClaw).
       # API_SERVER_KEY e' obrigatorio pro gateway subir o servidor na 8642.
@@ -75,6 +77,9 @@ services:
       # Persistente pra que a config do provider editada pelo usuario sobreviva a rebuilds.
       # Default /root/.hermes funciona na VPS (HOME=/root); install.sh ajusta no Mac/Windows.
       - ${HERMES_DATA_DIR:-/root/.hermes}:/root/.hermes
+      # Higgsfield CLI — token do `higgsfield auth login` (~/.higgsfield).
+      # Persistente pra que a sessao sobreviva a restart/rebuild (aluno loga 1x).
+      - ${HIGGSFIELD_DATA_DIR:-/root/.higgsfield}:/root/.higgsfield
     ports:
       - "127.0.0.1:${OPENCLAW_GATEWAY_PORT}:18789"
       # Loopback do host pra alcancar o ollama interno (opcional, SSH tunnel):

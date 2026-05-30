@@ -65,8 +65,29 @@ if [ -z "${EVOLUTION_API_KEY:-}" ]; then
 fi
 register_mcp whatsapp "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/whatsapp_evolution_mcp.py\"],\"env\":{\"EVOLUTION_BASE_URL\":\"${EVOLUTION_BASE_URL:-http://evolution-go:8080}\",\"EVOLUTION_API_KEY\":\"${EVOLUTION_API_KEY:-}\",\"EVOLUTION_INSTANCE_TOKEN\":\"${EVOLUTION_INSTANCE_TOKEN:-}\",\"EVOLUTION_INSTANCE\":\"${EVOLUTION_INSTANCE:-vibestack}\"}}"
 
+# higgsfield: envelopa o CLI 'higgsfield' (geracao de imagem/video, soul-id) como
+# tools tipados. O CLI le o token de ~/.higgsfield -> passamos HOME=/root explicito
+# porque o openclaw spawna o MCP child com env reduzido. Auth: o aluno roda uma vez
+# `docker exec -it <cont> higgsfield auth login` (OAuth no navegador); o token fica
+# no volume /root/.higgsfield e sobrevive a restart/rebuild.
+register_mcp higgsfield "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/higgsfield_cli_mcp.py\"],\"env\":{\"HOME\":\"/root\"}}"
+
+# atlascloud: MCP server OFICIAL da AtlasCloud (hub de 300+ modelos img/video/LLM).
+# Instalado global na imagem (bin /usr/local/bin/atlascloud-mcp). Auth so' por env
+# ATLASCLOUD_API_KEY — repassada explicitamente porque o openclaw spawna o child
+# com env reduzido. Sem login nem volume: a chave no .env ja' sobrevive a restart.
+if [ -z "${ATLASCLOUD_API_KEY:-}" ]; then
+  echo "[entrypoint] AVISO: ATLASCLOUD_API_KEY vazio — atlascloud MCP vai falhar auth. Configure no .env."
+fi
+register_mcp atlascloud "{\"command\":\"/usr/local/bin/atlascloud-mcp\",\"args\":[],\"env\":{\"ATLASCLOUD_API_KEY\":\"${ATLASCLOUD_API_KEY:-}\"}}"
+
 # Acrescente novos MCP servers aqui no mesmo padrao:
 # register_mcp outro-server '{"command":"...","args":[...]}'
+
+# Diretorio persistente de assets dos agentes (dentro do volume /root/.openclaw).
+# Mídia gerada/baixada (ex.: pelo higgsfield MCP) vai pra ca' e sobrevive a restart.
+# Qualquer escrita fora de /root/.openclaw (/tmp, /app, cwd) e' efemera.
+mkdir -p /root/.openclaw/workspace/_shared/assets /root/.openclaw/workspace/_shared/creatives 2>/dev/null || true
 
 # --- Hermes Agent (alternativa ao OpenClaw, no mesmo container) -----------
 # Hermes roda ao lado do OpenClaw: api_server OpenAI-compatible na 8642,
@@ -85,6 +106,7 @@ HERMES_HOME="$HERMES_HOME" \
 ACCESS_TOKEN="${ACCESS_TOKEN:-}" \
 AD_ACCOUNT_ID="${AD_ACCOUNT_ID:-}" \
 BUSINESS_ID="${BUSINESS_ID:-}" \
+ATLASCLOUD_API_KEY="${ATLASCLOUD_API_KEY:-}" \
 B2_KEY_ID="${B2_KEY_ID:-}" \
 B2_APP_KEY="${B2_APP_KEY:-}" \
 B2_BUCKET="${B2_BUCKET:-}" \
@@ -151,6 +173,18 @@ servers["whatsapp"] = {
         "EVOLUTION_INSTANCE_TOKEN": os.environ.get("EVOLUTION_INSTANCE_TOKEN", ""),
         "EVOLUTION_INSTANCE": os.environ.get("EVOLUTION_INSTANCE", "vibestack"),
     },
+}
+servers["higgsfield"] = {
+    "command": PY,
+    "args": ["/app/middleware/higgsfield_cli_mcp.py"],
+    # CLI le o token de ~/.higgsfield -> HOME explicito (env reduzido no spawn).
+    "env": {"HOME": "/root"},
+}
+servers["atlascloud"] = {
+    # MCP oficial da AtlasCloud, instalado global na imagem. Auth so' por env.
+    "command": "/usr/local/bin/atlascloud-mcp",
+    "args": [],
+    "env": {"ATLASCLOUD_API_KEY": os.environ.get("ATLASCLOUD_API_KEY", "")},
 }
 
 # Aprovacao de comandos: num canal headless (api_server/WhatsApp) NAO ha quem

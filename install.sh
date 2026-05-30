@@ -203,11 +203,13 @@ fi
 OPENCLAW_DATA_DIR_VAL="${HOME_ENV}/.openclaw"
 OLLAMA_DATA_DIR_VAL="${HOME_ENV}/.ollama"
 HERMES_DATA_DIR_VAL="${HOME_ENV}/.hermes"
+HIGGSFIELD_DATA_DIR_VAL="${HOME_ENV}/.higgsfield"
 EVOLUTION_DATA_DIR_VAL="${HOME_ENV}/.evolution-go"
 POSTGRES_DATA_DIR_VAL="${HOME_ENV}/.evogo-pg"
 info "OpenClaw data -> $OPENCLAW_DATA_DIR_VAL"
 info "Ollama data   -> $OLLAMA_DATA_DIR_VAL"
 info "Hermes data   -> $HERMES_DATA_DIR_VAL"
+info "Higgsfield    -> $HIGGSFIELD_DATA_DIR_VAL"
 info "Evolution data-> $EVOLUTION_DATA_DIR_VAL"
 info "Postgres data -> $POSTGRES_DATA_DIR_VAL"
 
@@ -215,7 +217,7 @@ info "Postgres data -> $POSTGRES_DATA_DIR_VAL"
 # Detecta diretorios de dados ja' existentes (config, modelos do Ollama,
 # sessoes, bancos). Reaproveitar mantem tudo; "do zero" APAGA esses diretorios.
 EXISTING_DIRS=""
-for d in .openclaw .ollama .hermes .evolution-go .evogo-pg; do
+for d in .openclaw .ollama .hermes .higgsfield .evolution-go .evogo-pg; do
   [ -d "${HOME_BASH}/${d}" ] && EXISTING_DIRS="${EXISTING_DIRS} ${HOME_BASH}/${d}"
 done
 if [ -n "$EXISTING_DIRS" ]; then
@@ -311,11 +313,11 @@ else
 fi
 
 # data dirs: sobrescreve apenas se vazio ou se ainda for o default da VPS.
-for pair in "OPENCLAW_DATA_DIR=$OPENCLAW_DATA_DIR_VAL" "OLLAMA_DATA_DIR=$OLLAMA_DATA_DIR_VAL" "HERMES_DATA_DIR=$HERMES_DATA_DIR_VAL" "EVOLUTION_DATA_DIR=$EVOLUTION_DATA_DIR_VAL" "POSTGRES_DATA_DIR=$POSTGRES_DATA_DIR_VAL"; do
+for pair in "OPENCLAW_DATA_DIR=$OPENCLAW_DATA_DIR_VAL" "OLLAMA_DATA_DIR=$OLLAMA_DATA_DIR_VAL" "HERMES_DATA_DIR=$HERMES_DATA_DIR_VAL" "HIGGSFIELD_DATA_DIR=$HIGGSFIELD_DATA_DIR_VAL" "EVOLUTION_DATA_DIR=$EVOLUTION_DATA_DIR_VAL" "POSTGRES_DATA_DIR=$POSTGRES_DATA_DIR_VAL"; do
   key="${pair%%=*}"; target="${pair#*=}"
   cur="$(get_env_var .env "$key")"
   case "$cur" in
-    ""|"/root/.openclaw"|"/root/.ollama"|"/root/.hermes"|"/root/.evolution-go"|"/root/.evogo-pg")
+    ""|"/root/.openclaw"|"/root/.ollama"|"/root/.hermes"|"/root/.higgsfield"|"/root/.evolution-go"|"/root/.evogo-pg")
       set_env_var .env "$key" "$target"
       info "$key definido como $target"
       ;;
@@ -343,6 +345,15 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
     set_env_var .env META_AD_ACCOUNT_ID "$meta_acc"
   else
     info 'Meta Ads pulado — preencha META_ACCESS_TOKEN no .env depois se mudar de ideia.'
+  fi
+
+  atlas_default='n'; [ -n "$(get_env_var .env ATLASCLOUD_API_KEY)" ] && atlas_default='y'
+  if ask_yesno 'Vai usar o AtlasCloud (hub de 300+ modelos img/video/LLM via MCP)?' "$atlas_default"; then
+    info 'Pegue a API key em https://www.atlascloud.ai/console/api-keys'
+    atlas_key="$(ask 'ATLASCLOUD_API_KEY' "$(get_env_var .env ATLASCLOUD_API_KEY)")"
+    set_env_var .env ATLASCLOUD_API_KEY "$atlas_key"
+  else
+    info 'AtlasCloud pulado — preencha ATLASCLOUD_API_KEY no .env depois se precisar.'
   fi
 
   b2_default='n'; [ -n "$(get_env_var .env B2_KEY_ID)" ] && b2_default='y'
@@ -443,8 +454,8 @@ fi
 
 # --- 7. criar diretorios de dados ------------------------------------------
 step "Criando diretorios de dados"
-mkdir -p "${HOME_BASH}/.openclaw" "${HOME_BASH}/.ollama" "${HOME_BASH}/.hermes" "${HOME_BASH}/.evolution-go" "${HOME_BASH}/.evogo-pg"
-info "OK: .openclaw, .ollama, .hermes, .evolution-go, .evogo-pg (em ${HOME_BASH})"
+mkdir -p "${HOME_BASH}/.openclaw" "${HOME_BASH}/.ollama" "${HOME_BASH}/.hermes" "${HOME_BASH}/.higgsfield" "${HOME_BASH}/.evolution-go" "${HOME_BASH}/.evogo-pg"
+info "OK: .openclaw, .ollama, .hermes, .higgsfield, .evolution-go, .evogo-pg (em ${HOME_BASH})"
 
 # --- 8. build --------------------------------------------------------------
 step "Build da imagem (docker compose build)"
@@ -478,7 +489,13 @@ Proximos passos (manuais):
            Local:  http://127.0.0.1:8642/v1   (Bearer = HERMES_API_SERVER_KEY)
            VPS:    ssh -N -L 8642:127.0.0.1:8642 root@SEU_VPS_IP
 
-  5) (Opcional) WhatsApp via Evolution Go (servico na 8080):
+  5) (Opcional) Higgsfield — geracao de imagem/video (agente Criativo).
+       Autentique UMA vez (abre o navegador; o token persiste no volume e
+       sobrevive a restart/rebuild — so' refaca quando 'auth status' expirar):
+         docker compose exec openclaw-vibestack higgsfield auth login
+         docker compose exec openclaw-vibestack higgsfield auth status
+
+  6) (Opcional) WhatsApp via Evolution Go (servico na 8080):
        a) Ative a licenca (uma vez) no Manager:
             Local: http://127.0.0.1:8080/manager/login   (API key = EVOLUTION_API_KEY)
             VPS:   ssh -N -L 8080:127.0.0.1:8080 root@SEU_VPS_IP
@@ -519,6 +536,7 @@ Dados persistentes:
   ${OPENCLAW_DATA_DIR_VAL}
   ${OLLAMA_DATA_DIR_VAL}
   ${HERMES_DATA_DIR_VAL}
+  ${HIGGSFIELD_DATA_DIR_VAL}
   ${EVOLUTION_DATA_DIR_VAL}
   ${POSTGRES_DATA_DIR_VAL}
 

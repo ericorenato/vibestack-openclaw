@@ -6,6 +6,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 - Um gateway OpenClaw acessível em `http://127.0.0.1:18789` (via tunnel do laptop).
 - Ollama no mesmo container — modelos locais (`llama3.2:3b`, `qwen2.5:7b`, etc.) sem dependência de API paga.
 - 70 tools MCP pra Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, datasets/pixels, product sets/items/feeds, **custom audiences**, **lookalikes**, **duplicação de campanhas/adsets/ads**) — agente cria/edita/lê/duplica/segmenta direto. 60 via CLI oficial + 10 via Graph API direta (audience/copies, que a CLI não cobre).
+- Geração de mídia para o Criativo: **Higgsfield** (CLI envelopado em MCP — imagem/vídeo/soul-id) e **AtlasCloud** (MCP oficial, hub de 300+ modelos). Veja [Geração de mídia & hub de modelos](#geração-de-mídia--hub-de-modelos).
 - Bloco demarcado no `Dockerfile` pra "bakear" suas próprias CLIs/binários (gog, goplaces, wacli já vêm de exemplo).
 - **Hermes Agent** (NousResearch) no mesmo container como alternativa ao OpenClaw — API OpenAI-compatible em `http://127.0.0.1:8642/v1`, com acesso às **mesmas** tools MCP (meta-ads, media-editor). Veja [Hermes Agent](#hermes-agent-alternativa-ao-openclaw).
 
@@ -42,7 +43,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 
 ## Arquitetura em uma frase
 
-Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, **(c)** middlewares Python MCP (`meta-ads`, `media-editor`, `whatsapp`) compartilhados pelos agentes, e **(d)** o **Hermes Agent** na 8642/9119 — alternativa ao OpenClaw com as mesmas tools. Ao lado, dois serviços irmãos no compose dão o canal de WhatsApp: **Evolution Go** (whatsmeow) na 8080 + **Postgres**. Tudo em **portas separadas**, coexistindo sem conflito.
+Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, **(c)** MCP servers compartilhados pelos agentes — middlewares Python (`meta-ads`, `media-editor`, `whatsapp`, `higgsfield`) + o MCP oficial `atlascloud` (npm), e **(d)** o **Hermes Agent** na 8642/9119 — alternativa ao OpenClaw com as mesmas tools. Ao lado, dois serviços irmãos no compose dão o canal de WhatsApp: **Evolution Go** (whatsmeow) na 8080 + **Postgres**. Tudo em **portas separadas**, coexistindo sem conflito.
 
 | Serviço            | Porta (loopback) | Processo / serviço                  |
 |--------------------|------------------|-------------------------------------|
@@ -326,18 +327,23 @@ docker compose up -d --force-recreate openclaw-vibestack
 ### Passo 9 — Confirmar MCP registrado
 
 ```bash
-docker compose logs openclaw-vibestack | grep -iE "mcp|meta-ads"
+docker compose logs openclaw-vibestack | grep -iE "mcp|registrado"
 ```
 
-Espera ver: `[entrypoint] mcp 'meta-ads' registrado`. Se aparecer `AVISO: ACCESS_TOKEN vazio`, volta no Passo 6 e preenche.
+Espera ver os servers registrados — entre eles `[entrypoint] mcp 'meta-ads' registrado`, e também `media-editor`, `whatsapp`, `higgsfield` e `atlascloud`. Avisos comuns e o que fazer:
 
-Pra inspecionar a config gravada:
+- `AVISO: ACCESS_TOKEN vazio` → preencha `META_ACCESS_TOKEN` (Passo 6).
+- `AVISO: ATLASCLOUD_API_KEY vazio` → preencha `ATLASCLOUD_API_KEY` no `.env` (o MCP `atlascloud` sobe, mas falha auth até preencher).
+- Higgsfield: o MCP sobe sem credencial — a auth é por login (veja [Geração de mídia](#geração-de-mídia--hub-de-modelos)); confira com `docker compose exec openclaw-vibestack higgsfield auth status`.
+
+Pra listar tudo de uma vez (ou inspecionar a config gravada):
 
 ```bash
+docker compose exec openclaw-vibestack openclaw mcp list   # meta-ads, media-editor, whatsapp, higgsfield, atlascloud
 docker compose exec openclaw-vibestack cat /root/.openclaw/openclaw.json | grep -A8 meta-ads
 ```
 
-Deve mostrar `command`, `args` e um objeto `env` com `ACCESS_TOKEN`, `AD_ACCOUNT_ID`, `BUSINESS_ID`.
+Deve mostrar `command`, `args` e o objeto `env` de cada server (ex.: `meta-ads` com `ACCESS_TOKEN`/`AD_ACCOUNT_ID`/`BUSINESS_ID`; `atlascloud` com `ATLASCLOUD_API_KEY`; `higgsfield` com `HOME`).
 
 ### Passo 10 — SSH tunnel do laptop
 
@@ -592,9 +598,9 @@ Sugestões por tamanho:
 O [Hermes Agent](https://github.com/NousResearch/hermes-agent) da NousResearch vem
 **baked no mesmo container** como uma alternativa ao OpenClaw. Ele é clonado do git no
 build (pinado por `HERMES_REF`, igual ao OpenClaw), instalado num venv Python 3.11
-com o extra `[all]` (browser/Playwright, mcp, messaging, etc.), e **compartilha as mesmas
-tools MCP** que o OpenClaw — `meta-ads`, `media-editor` e `whatsapp` (mesmos scripts em
-`/app/middleware`, mesmo venv).
+com o extra `[all]` (browser/Playwright, mcp, messaging, etc.), e **compartilha os mesmos
+MCP servers** que o OpenClaw — `meta-ads`, `media-editor`, `whatsapp` e `higgsfield` (mesmos
+scripts em `/app/middleware`, mesmo venv) + `atlascloud` (MCP oficial via npm).
 
 Ele expõe **duas portas separadas**, ambas coexistindo com OpenClaw (18789) e Ollama (11434):
 
@@ -683,7 +689,7 @@ config, providers, env e conversa com o agente na aba **Chat**. Logs:
 ### Confirmar as tools registradas
 
 ```bash
-docker compose exec openclaw-vibestack hermes mcp list   # lista meta-ads, media-editor, whatsapp
+docker compose exec openclaw-vibestack hermes mcp list   # meta-ads, media-editor, whatsapp, higgsfield, atlascloud
 docker compose logs openclaw-vibestack | grep hermes      # ver o boot do gateway
 ```
 
@@ -748,6 +754,41 @@ docker compose up -d        # sobe openclaw-vibestack + evolution-go + postgres
 
 ---
 
+## Geração de mídia & hub de modelos
+
+Dois caminhos para o agente Criativo gerar imagem/vídeo, com **modelos de auth diferentes** (cada um pelo que a plataforma oferece):
+
+### Higgsfield (CLI + MCP) — auth por navegador (1x)
+
+O Higgsfield não tem MCP oficial funcional, então a imagem instala o **CLI** (`@higgsfield/cli`) e o expõe via um middleware MCP próprio (`higgsfield_cli_mcp.py`): tools `generate_image`, `generate_video`, `soul_id_create`, `upload`, etc.
+
+A autenticação é **OAuth no navegador** (não tem API key). Por isso o aluno loga **uma vez**, e o token persiste num volume (`${HIGGSFIELD_DATA_DIR}` → `/root/.higgsfield`) — sobrevive a restart/rebuild:
+
+```bash
+# 1x (abre uma URL/código pra logar no navegador):
+docker compose exec openclaw-vibestack higgsfield auth login
+# Conferir quando quiser:
+docker compose exec openclaw-vibestack higgsfield auth status
+```
+
+Tokens são curtos: **só refaça o login quando `auth status` acusar expiração** — não a cada restart, graças ao volume. Mídia gerada cai em `/root/.openclaw/workspace/_shared/assets/` (persistente). Para o rosto do Érico, treine um `soul_id` uma vez a partir da seed `seeds/image/erico-rosto.jpeg` (B2) e reuse — veja `agency/criativo/AGENTS.md`.
+
+### AtlasCloud (MCP oficial) — auth por API key (env)
+
+Hub de 300+ modelos (imagem/vídeo/LLM). Aqui usamos o **MCP server oficial** (`atlascloud-mcp`, instalado na imagem) — não há CLI/wrapper a manter. Auth é **só por API key via env**, sem login nem volume: a chave no `.env` já sobrevive a restart.
+
+```bash
+# 1) Pegue a key em https://www.atlascloud.ai/console/api-keys
+# 2) Preencha no .env (ou responda a pergunta do install.sh):
+#    ATLASCLOUD_API_KEY=...
+# 3) Recrie o container pra propagar a env:
+docker compose up -d --force-recreate openclaw-vibestack
+```
+
+Pronto — `atlascloud` aparece em `openclaw mcp list` (e no Hermes). Por que API key e não login interativo? É o modelo mais automático para container: stateless, zero passos manuais, recupera sozinho após restart — mesmo padrão de `META_ACCESS_TOKEN` / `B2_*`.
+
+---
+
 ## Referência técnica
 
 ### Estrutura do repo
@@ -760,6 +801,7 @@ docker compose up -d        # sobe openclaw-vibestack + evolution-go + postgres
 ├── middleware/
 │   ├── meta_ads_cli_mcp.py        # MCP — 70 tools Meta Ads (CLI + Graph API)
 │   ├── media_editor_mcp.py        # MCP — ffmpeg + Backblaze B2
+│   ├── higgsfield_cli_mcp.py      # MCP — Higgsfield CLI (geração imagem/vídeo, soul-id)
 │   ├── whatsapp_evolution_mcp.py  # MCP — envio WhatsApp via Evolution Go (whatsmeow)
 │   ├── whatsapp_bridge.py         # bridge inbound: webhook Evolution -> Hermes -> resposta
 │   └── requirements.txt
@@ -848,10 +890,21 @@ Commit + push + na VPS: `git pull && docker compose build && docker compose up -
 
 ### Persistência
 
-Sobrevivem a `docker compose down`/rebuild:
+Sobrevivem a `docker compose down`/rebuild (cada um é um volume):
 
-- `${OPENCLAW_DATA_DIR}` (default `/root/.openclaw`) → `/root/.openclaw` no container (auth profiles, `openclaw.json`, workspace do agente — tudo num mount só).
-- `${OLLAMA_DATA_DIR}` (default `/root/.ollama`) → `/var/lib/ollama` no container (modelos baixados).
+- `${OPENCLAW_DATA_DIR}` (default `/root/.openclaw`) → `/root/.openclaw` (auth profiles, `openclaw.json`, **workspace do agente** — tudo num mount só).
+- `${OLLAMA_DATA_DIR}` (default `/root/.ollama`) → `/var/lib/ollama` (modelos baixados).
+- `${HERMES_DATA_DIR}` (default `/root/.hermes`) → `/root/.hermes` (config.yaml, sessões, memórias).
+- `${HIGGSFIELD_DATA_DIR}` (default `/root/.higgsfield`) → `/root/.higgsfield` (token do `higgsfield auth login`).
+- `${EVOLUTION_DATA_DIR}` / `${POSTGRES_DATA_DIR}` → dados/sessão do WhatsApp.
+
+**Onde os agentes devem gravar arquivos.** Só persiste o que está **dentro** desses volumes. Escrita em `/tmp`, `/app`, `/root` (fora de `.openclaw`/`.hermes`) ou no diretório atual é **efêmera** e some no `down`/rebuild — essa é a causa de "os arquivos sumiram". Diretórios persistentes canônicos para os agentes:
+
+- `/root/.openclaw/workspace/<agente>/` — workspace por agente (já configurado em `openclaw.json`).
+- `/root/.openclaw/workspace/_shared/assets/` — mídia baixada/gerada (ex.: pelo MCP `higgsfield`).
+- `/root/.openclaw/workspace/_shared/creatives/` — criativos finalizados (`finalize_for_meta`).
+
+O entrypoint cria `_shared/assets` e `_shared/creatives` no boot, e os `AGENTS.md` instruem os agentes a nunca gravar fora do workspace. **Storage canônico de longo prazo continua sendo o Backblaze B2** (sobrevive até à destruição do volume); o `_shared/` é cache local persistente entre restarts.
 
 ### CLI `openclaw` dentro do container
 

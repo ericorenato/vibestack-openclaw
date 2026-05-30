@@ -18,6 +18,16 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
 # Instala em venv isolado gerenciado por uv; binario fica em /root/.local/bin/meta.
 RUN uv tool install --python 3.12 meta-ads
 
+# Higgsfield CLI (geracao de imagem/video, soul-id). Node 24 ja' presente -> npm.
+# Binario 'higgsfield' no PATH. Auth via `higgsfield auth login` (OAuth no navegador);
+# o token vai pra ~/.higgsfield, persistido em volume pelo compose (sobrevive a restart).
+RUN npm install -g @higgsfield/cli
+
+# AtlasCloud — MCP server OFICIAL (hub de 300+ modelos: imagem/video/LLM).
+# Instalado global (evita download via npx a cada spawn); binario 'atlascloud-mcp'
+# em /usr/local/bin. Auth 100% por env ATLASCLOUD_API_KEY (sem login/volume).
+RUN npm install -g atlascloud-mcp
+
 # Python SDK do MCP para os middlewares customizados (meta_ads_cli_mcp.py, media_editor_mcp.py).
 # Venv criado por uv vem sem pip — usamos `uv pip install` no venv ativo via VIRTUAL_ENV.
 # boto3 e' usado pelo media_editor_mcp.py como cliente S3-compatible do Backblaze B2.
