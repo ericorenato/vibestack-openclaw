@@ -250,6 +250,8 @@ if [ -n "${EVOLUTION_INSTANCE_TOKEN:-}" ] && { [ "$WA_BRIDGE_AGENT" = "openclaw"
     EVOLUTION_PROXY_PORT="${EVOLUTION_PROXY_PORT:-}" \
     EVOLUTION_PROXY_USERNAME="${EVOLUTION_PROXY_USERNAME:-}" \
     EVOLUTION_PROXY_PASSWORD="${EVOLUTION_PROXY_PASSWORD:-}" \
+    EVOLUTION_IGNORE_GROUPS="${EVOLUTION_IGNORE_GROUPS:-true}" \
+    EVOLUTION_IGNORE_STATUS="${EVOLUTION_IGNORE_STATUS:-true}" \
       /opt/middleware-venv/bin/python /app/middleware/whatsapp_bridge.py
   ) >/var/log/whatsapp-bridge.log 2>&1 &
   WA_BRIDGE_PID=$!

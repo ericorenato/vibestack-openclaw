@@ -72,6 +72,14 @@ PROXY = {
 }
 PROXY_OK = all(PROXY[k] for k in ("host", "port", "username", "password"))
 
+# Configuracoes da instancia na criacao: por padrao ignora grupos e status
+# (canal 1:1 com clientes). Mude no Manager do Evolution se quiser grupos.
+def _envbool(name: str, default: bool) -> bool:
+    return os.environ.get(name, str(default)).strip().lower() in {"1", "true", "yes"}
+
+IGNORE_GROUPS = _envbool("EVOLUTION_IGNORE_GROUPS", True)
+IGNORE_STATUS = _envbool("EVOLUTION_IGNORE_STATUS", True)
+
 _allowed_raw = os.environ.get("WA_BRIDGE_ALLOWED_NUMBERS", "").strip()
 
 
@@ -390,11 +398,16 @@ def _provision() -> None:
             if inst is None:
                 # O CreateStruct do Evolution NAO aceita 'webhook' (so name/token/proxy);
                 # o webhook e' definido no connect (webhookUrl). O proxy SIM vai no create.
-                body: dict = {"name": EVOLUTION_INSTANCE, "token": EVOLUTION_INSTANCE_TOKEN}
+                body: dict = {
+                    "name": EVOLUTION_INSTANCE,
+                    "token": EVOLUTION_INSTANCE_TOKEN,
+                    "advancedSettings": {"ignoreGroups": IGNORE_GROUPS, "ignoreStatus": IGNORE_STATUS},
+                }
                 if PROXY_OK:
                     body["proxy"] = _proxy_struct()
                 _evo_request("POST", "/instance/create", body=body, admin=True)
-                _log(f"instancia '{EVOLUTION_INSTANCE}' criada (proxy={'sim' if PROXY_OK else 'nao'}).")
+                _log(f"instancia '{EVOLUTION_INSTANCE}' criada (proxy={'sim' if PROXY_OK else 'nao'}, "
+                     f"ignoreGroups={IGNORE_GROUPS}, ignoreStatus={IGNORE_STATUS}).")
             else:
                 _log(f"instancia '{EVOLUTION_INSTANCE}' ja existe — reaproveitando (nao recrio).")
                 # Aplica o proxy numa instancia que ainda nao tem (edita via POST /instance/proxy/<id>).

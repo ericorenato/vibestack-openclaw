@@ -49,6 +49,10 @@ services:
       - EVOLUTION_PROXY_PORT=${EVOLUTION_PROXY_PORT:-}
       - EVOLUTION_PROXY_USERNAME=${EVOLUTION_PROXY_USERNAME:-}
       - EVOLUTION_PROXY_PASSWORD=${EVOLUTION_PROXY_PASSWORD:-}
+      # Na criacao da instancia: ignora grupos e status (canal 1:1). Mude no .env
+      # ou no Manager do Evolution se quiser que o agente veja grupos.
+      - EVOLUTION_IGNORE_GROUPS=${EVOLUTION_IGNORE_GROUPS:-true}
+      - EVOLUTION_IGNORE_STATUS=${EVOLUTION_IGNORE_STATUS:-true}
       # Auto-aprovacao de comandos (canal headless trava sem isso -> timeout). off|smart|manual.
       - HERMES_APPROVALS_MODE=${HERMES_APPROVALS_MODE:-off}
       # Bridge inbound do WhatsApp (webhook do Evolution -> agente -> resposta).
@@ -129,7 +133,8 @@ services:
       - GLOBAL_API_KEY=${EVOLUTION_API_KEY}
       - POSTGRES_AUTH_DB=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_auth?sslmode=disable
       - POSTGRES_USERS_DB=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_users?sslmode=disable
-      - DATABASE_SAVE_MESSAGES=false
+      # Salva as mensagens no Postgres (historico). Mude p/ false no .env se nao quiser.
+      - DATABASE_SAVE_MESSAGES=${EVOLUTION_SAVE_MESSAGES:-true}
       # Reconecta as instancias automaticamente no startup (a sessao do WhatsApp
       # fica no Postgres/evogo_auth). Sem isso, apos restart/rebuild a instancia
       # fica desconectada ate alguem chamar /instance/connect. Default do Evolution

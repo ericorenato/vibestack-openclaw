@@ -482,9 +482,14 @@ Proximos passos (manuais):
        a) Ative a licenca (uma vez) no Manager:
             Local: http://127.0.0.1:8080/manager/login   (API key = EVOLUTION_API_KEY)
             VPS:   ssh -N -L 8080:127.0.0.1:8080 root@SEU_VPS_IP
-       b) Crie a instancia e pareie (pelo agente ou Manager):
-            tool 'wa_create_instance' -> 'wa_get_qr' -> escaneie no celular
+       b) Pareie o QR no Manager (a instancia '${EVOLUTION_INSTANCE:-vibestack}' e' criada
+          automaticamente pelo bridge no boot, com webhook + proxy + grupos desativados).
        c) 'wa_instance_status' = connected -> os agentes enviam via 'wa_send_text'.
+
+     Defaults desta instalacao (mude no .env ou no Manager do Evolution se quiser):
+       - Mensagens SAO salvas no banco (EVOLUTION_SAVE_MESSAGES=true).
+       - Grupos e status SAO ignorados (EVOLUTION_IGNORE_GROUPS/STATUS=true) — canal 1:1.
+       - A sessao do WhatsApp persiste no Postgres e RECONECTA sozinha apos restart.
 
 ${C_BOLD}Credenciais geradas${C_OFF} (guarde com cuidado — todas vivem em ${C_BOLD}${ENV_PATH_ABS}${C_OFF}):
 
