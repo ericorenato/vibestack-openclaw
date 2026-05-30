@@ -4,8 +4,8 @@
 Evolution Go (https://github.com/evolution-foundation/evolution-go) roda como
 serviço separado no docker-compose (porta 8080). Este middleware é o cliente
 REST tipado consumido pelos agentes (OpenClaw e Hermes) — só ENVIO + gestão de
-instância/pareamento. Inbound (receber mensagens) não é coberto aqui (seria via
-webhook do Evolution → bridge → agente; etapa futura).
+instância/pareamento. Inbound (receber mensagens/mídia) é coberto pelo
+whatsapp_bridge.py (webhook do Evolution → bridge → agente → resposta).
 
 Modelo de auth do Evolution Go (confirmado em pkg/middleware/auth_middleware.go):
   - Admin (criar/listar/deletar instância): header `apikey: <GLOBAL_API_KEY>`.

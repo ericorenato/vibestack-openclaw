@@ -714,9 +714,20 @@ WhatsApp → Evolution Go (evento "Message") --webhook--> bridge (porta 8765, in
 ```
 
 O `evolution-go` posta os eventos no `WEBHOOK_URL=http://openclaw-vibestack:8765/webhook`
-(DNS do compose, automático). O bridge filtra só mensagens **recebidas** de texto (ignora as
+(DNS do compose, automático). O bridge filtra mensagens **recebidas** (ignora as
 suas próprias, grupos e status), mantém **uma sessão Hermes por contato** (`X-Hermes-Session-Id`),
 responde 200 na hora (o agente pode demorar com tool calls) e processa em background.
+
+**Mídia recebida (imagem e áudio).** O bridge também processa **imagem** e **áudio** enviados pelo WhatsApp:
+
+1. Baixa os bytes na ordem **`mediaUrl` (S3/MinIO presigned)** → **`base64` inline** → **`POST /message/downloadmedia`** (on-demand; funciona mesmo sem S3).
+2. Salva em `/root/.openclaw/workspace/_shared/assets/wa/` (persistente).
+3. Manda pro modelo do agente:
+   - **Hermes** → conteúdo multimodal OpenAI (`image_url` para imagem, `input_audio` para áudio).
+   - **OpenClaw** → passa o caminho do arquivo salvo + legenda no prompt (o agente interpreta com suas tools).
+4. **Se o modelo configurado não aceitar a modalidade** (não é de visão/áudio), o bridge responde avisando que *"o modelo configurado neste agente não interpreta imagens/áudios"* — em vez de erro cru. Como o modelo **varia por agente**, isso depende do que você plugou no Hermes/OpenClaw.
+
+Vídeo/documento ainda não são interpretados (o bridge avisa). Legenda de imagem é usada como prompt. Para o caminho via **S3/Backblaze**, ligue o storage do Evolution (veja abaixo); sem isso, o download on-demand cobre tudo.
 
 > **Quem responde (escolha do aluno):** `WA_BRIDGE_AGENT=hermes|openclaw`.
 > - `hermes` → HTTP no api_server (`/v1/chat/completions`, sessão por número).
@@ -728,6 +739,22 @@ responde 200 na hora (o agente pode demorar com tool calls) e processa em backgr
 **Auth (confirmado no código do Evolution):** header `apikey`. A `EVOLUTION_API_KEY` (global) é
 de admin (criar instância); cada instância tem seu próprio token (`EVOLUTION_INSTANCE_TOKEN`,
 definido no create) usado em envio/QR/status.
+
+### Storage de mídia recebida (opcional — S3 / Backblaze)
+
+O Evolution Go pode subir a mídia recebida num bucket **S3/MinIO** e mandar a `mediaUrl` (link presigned) no webhook — aí o bridge baixa de lá. É **opcional**: sem isso, a mídia já vem como **base64 inline** no webhook (o compose deixa `WEBHOOK_FILES=true`), então funciona out-of-the-box; ligar o S3 só deixa o payload mais enxuto e guarda uma cópia no seu bucket. Use a variável `MINIO_*` do Evolution (o `install.sh` pergunta isso e deixa reusar as credenciais do Backblaze B2):
+
+```
+EVOLUTION_MINIO_ENABLED=true
+EVOLUTION_MINIO_ENDPOINT=s3.us-west-002.backblazeb2.com   # host SEM https://
+EVOLUTION_MINIO_ACCESS_KEY=<B2_KEY_ID>
+EVOLUTION_MINIO_SECRET_KEY=<B2_APP_KEY>
+EVOLUTION_MINIO_BUCKET=<bucket>
+EVOLUTION_MINIO_REGION=us-west-002
+EVOLUTION_MINIO_USE_SSL=true
+```
+
+O compose mapeia isso pras vars que o Evolution Go lê (`MINIO_ENABLED/ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET/USE_SSL/REGION` + `WEBHOOK_FILES`). Quando ligado, a mídia recebida fica também no seu bucket (URLs presigned válidas ~7 dias).
 
 ### Subir e parear (uma vez)
 

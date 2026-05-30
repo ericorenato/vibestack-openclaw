@@ -148,6 +148,21 @@ services:
       # Webhook global: todo evento (inclusive mensagem recebida) vai pro bridge
       # inbound que roda no container openclaw-vibestack (DNS do compose).
       - WEBHOOK_URL=http://openclaw-vibestack:${WA_BRIDGE_PORT:-8765}/webhook
+      # WEBHOOK_FILES: master switch que anexa a mídia recebida no webhook. SEMPRE on
+      # pra o bridge receber imagem/áudio out-of-the-box:
+      #   - MINIO_ENABLED=false -> mídia vai como base64 inline (data.Message.base64).
+      #   - MINIO_ENABLED=true  -> mídia vai pro bucket e vem como data.Message.mediaUrl
+      #     (presigned, ~7 dias) — payload do webhook mais enxuto + arquivo no seu S3.
+      - WEBHOOK_FILES=true
+      # Storage S3/MinIO p/ mídia recebida. Aponta p/ Backblaze B2 (S3-compatible) ou
+      # MinIO próprio. Desligado por padrão (base64 inline cobre tudo). Ligue p/ offload.
+      - MINIO_ENABLED=${EVOLUTION_MINIO_ENABLED:-false}
+      - MINIO_ENDPOINT=${EVOLUTION_MINIO_ENDPOINT:-}
+      - MINIO_ACCESS_KEY=${EVOLUTION_MINIO_ACCESS_KEY:-}
+      - MINIO_SECRET_KEY=${EVOLUTION_MINIO_SECRET_KEY:-}
+      - MINIO_BUCKET=${EVOLUTION_MINIO_BUCKET:-}
+      - MINIO_USE_SSL=${EVOLUTION_MINIO_USE_SSL:-true}
+      - MINIO_REGION=${EVOLUTION_MINIO_REGION:-}
     volumes:
       - ${EVOLUTION_DATA_DIR:-/root/.evolution-go}:/app/data
     ports:

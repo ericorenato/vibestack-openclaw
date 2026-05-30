@@ -13,9 +13,18 @@ escutando em 0.0.0.0:WA_BRIDGE_PORT — alcançável pelo evolution-go via DNS d
 compose (http://openclaw-vibestack:<porta>/webhook). Só stdlib (http.server +
 urllib), sem dependência nova.
 
+Mídia inbound (imagem/áudio): além de texto, o bridge processa imagem e áudio.
+Baixa os bytes na ordem mediaUrl (S3/MinIO presigned) -> base64 inline ->
+POST /message/downloadmedia (funciona sem S3), salva em _shared/assets/wa/ e
+manda pro modelo (Hermes multimodal: image_url/input_audio; OpenClaw: via arquivo).
+Se o modelo configurado não aceitar a modalidade, responde avisando que não
+comporta. Configure o storage do Evolution (MINIO_*/Backblaze) p/ usar mediaUrl.
+
 Formato do webhook (confirmado em pkg/whatsmeow/service/whatsmeow.go):
   {"event": "Message", "data": {"Info": {"Chat","Sender","IsFromMe","ID",...},
-                                "Message": {"conversation": "..." | "extendedTextMessage": {"text": "..."}}}}
+     "Message": {"conversation": "..." | "extendedTextMessage": {"text": "..."}
+                 | "imageMessage"|"audioMessage"|... {"caption","mimetype",...},
+                 "mediaUrl": "...(S3)", "base64": "...(sem S3)", "mimetype": "..."}}}
 
 Env:
   WA_BRIDGE_PORT            porta do listener (default 8765; só rede interna do compose)
@@ -28,6 +37,7 @@ Env:
   EVOLUTION_BASE_URL        base do Evolution Go (default http://evolution-go:8080)
   EVOLUTION_INSTANCE_TOKEN  token da instância (apikey de envio)
 """
+import base64
 import json
 import os
 import re
@@ -105,6 +115,32 @@ for _n in _allowed_raw.split(","):
 # Comandos (vindos do WhatsApp) que reiniciam a conversa.
 RESET_CMDS = {"/reset", "/novo", "/new", "/clear", "/limpar", "/reiniciar"}
 
+# --- Mídia inbound (imagem/áudio) ------------------------------------------
+# Diretório persistente onde a mídia recebida é salva (dentro do volume do OpenClaw).
+WA_MEDIA_DIR = "/root/.openclaw/workspace/_shared/assets/wa"
+
+# Containers de mídia no data.Message (protojson lowerCamelCase) -> tipo lógico.
+# Confirmado em evolution-go pkg/whatsmeow/service/whatsmeow.go.
+_MEDIA_CONTAINERS = {
+    "imagemessage": "image",
+    "stickermessage": "image",
+    "audiomessage": "audio",
+    "videomessage": "video",
+    "documentmessage": "document",
+}
+_MIME_EXT = {
+    "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png",
+    "image/webp": "webp", "image/gif": "gif",
+    "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/mp4": "m4a",
+    "audio/aac": "aac", "audio/wav": "wav", "audio/x-wav": "wav", "audio/amr": "amr",
+    "video/mp4": "mp4", "video/3gpp": "3gp",
+    "application/pdf": "pdf",
+}
+
+
+class ModelMediaUnsupported(Exception):
+    """O modelo/endpoint do agente não aceita a mídia enviada (imagem/áudio)."""
+
 # Dedup de message IDs já processados (Evolution pode reentregar). Bounded.
 _seen_ids: dict[str, None] = {}
 _seen_lock = threading.Lock()
@@ -150,9 +186,24 @@ def _digits(jid: str) -> str:
     return re.sub(r"\D", "", head)
 
 
-def _extract(data: dict) -> tuple[str, str, str] | None:
-    """Devolve (number, text, msg_id) de um evento Message inbound; None se deve ignorar.
+def _find_media(msg: dict) -> tuple[str, dict] | None:
+    """Acha o container de mídia em data.Message. Retorna (kind, obj) ou None."""
+    lower = {k.lower(): k for k in msg.keys()}
+    for lk, kind in _MEDIA_CONTAINERS.items():
+        real = lower.get(lk)
+        if real:
+            obj = msg.get(real)
+            if isinstance(obj, dict):
+                return kind, obj
+    return None
 
+
+def _extract(data: dict) -> dict | None:
+    """Devolve {number, text, msg_id, media} de um evento Message inbound; None se ignorar.
+
+    media=None para texto puro. Para imagem/áudio/vídeo/documento, media é um dict
+    com kind/caption/mimetype/media_url/base64/message (o data.Message cru, usado
+    pelo /message/downloadmedia). text recebe a legenda da mídia (pode ser vazia).
     Defensivo quanto a casing (Info/info, IsFromMe/isFromMe, Message/message).
     """
     info = data.get("Info") or data.get("info") or {}
@@ -171,16 +222,33 @@ def _extract(data: dict) -> tuple[str, str, str] | None:
     if not number:
         return None
 
+    msg_id = str(info.get("ID") or info.get("Id") or info.get("id") or "")
+
     text = msg.get("conversation") or msg.get("Conversation")
     if not text:
         ext = msg.get("extendedTextMessage") or msg.get("ExtendedTextMessage") or {}
         text = ext.get("text") or ext.get("Text")
-    if not text:
-        # mídia/áudio/etc. sem texto — fora do escopo (só texto por enquanto)
-        return None
 
-    msg_id = str(info.get("ID") or info.get("Id") or info.get("id") or "")
-    return number, str(text), msg_id
+    media = None
+    if not text:
+        found = _find_media(msg)
+        if not found:
+            return None  # sem texto e sem mídia conhecida (reação, location, etc.)
+        kind, obj = found
+        caption = obj.get("caption") or obj.get("Caption") or ""
+        media = {
+            "kind": kind,
+            "caption": str(caption or ""),
+            # mimetype/mediaUrl/base64 são irmãos que o Evolution injeta em data.Message.
+            "mimetype": str(msg.get("mimetype") or msg.get("mimeType") or obj.get("mimetype") or ""),
+            "media_url": msg.get("mediaUrl") or msg.get("mediaURL") or msg.get("MediaUrl"),
+            "base64": msg.get("base64") or msg.get("Base64"),
+            "message": msg,
+            "msg_id": msg_id,
+        }
+        text = str(caption or "")
+
+    return {"number": number, "text": str(text), "msg_id": msg_id, "media": media}
 
 
 def _ask_hermes(number: str, text: str) -> str:
@@ -301,6 +369,183 @@ def _process(number: str, text: str) -> None:
         _reply_safe(number, msg)
 
 
+# ============================================================
+# Mídia inbound: download (S3/MinIO presigned, base64 inline, ou /downloadmedia)
+# + envio ao modelo (Hermes multimodal / OpenClaw via arquivo salvo).
+# ============================================================
+
+def _http_get_bytes(url: str) -> bytes:
+    """GET cru de uma URL (ex.: presigned do MinIO/Backblaze)."""
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": "wa-bridge"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return resp.read()
+
+
+def _download_via_evolution(message: dict) -> tuple[bytes, str]:
+    """Baixa+descriptografa a mídia via POST /message/downloadmedia (funciona SEM S3).
+
+    Body = {"message": <data.Message>}; auth = apikey da instância. A resposta traz
+    data.base64 como data-URL ('data:<mime>;base64,...'). Retorna (bytes, mimetype).
+    """
+    body = json.dumps({"message": message}).encode("utf-8")
+    req = urllib.request.Request(
+        f"{EVOLUTION_BASE_URL}/message/downloadmedia",
+        data=body, method="POST",
+        headers={"Content-Type": "application/json", "apikey": EVOLUTION_INSTANCE_TOKEN},
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        out = json.loads(resp.read().decode("utf-8"))
+    durl = ""
+    if isinstance(out, dict):
+        durl = (out.get("data") or {}).get("base64") or out.get("base64") or ""
+    if isinstance(durl, str) and durl.startswith("data:") and "," in durl:
+        head, b64 = durl.split(",", 1)
+        mime = head[5:].split(";")[0]
+        return base64.b64decode(b64), mime
+    raise RuntimeError("downloadmedia não devolveu base64")
+
+
+def _fetch_media_bytes(media: dict) -> tuple[bytes, str]:
+    """Obtém os bytes da mídia. Prioridade: mediaUrl (S3/MinIO) -> base64 inline -> /downloadmedia."""
+    mime = (media.get("mimetype") or "").strip()
+    url = media.get("media_url")
+    if url:
+        return _http_get_bytes(url), mime
+    b64 = media.get("base64")
+    if b64:
+        return base64.b64decode(b64), mime
+    return _download_via_evolution(media.get("message") or {})
+
+
+def _save_media(number: str, media: dict, data_bytes: bytes, mime: str) -> str:
+    """Salva a mídia em WA_MEDIA_DIR (persistente, dentro do volume) e devolve o path."""
+    ext = _MIME_EXT.get((mime or "").split(";")[0].strip().lower(), "bin")
+    stamp = re.sub(r"\W", "", media.get("msg_id") or "") or str(int(time.time()))
+    try:
+        os.makedirs(WA_MEDIA_DIR, exist_ok=True)
+    except OSError:
+        pass
+    path = f"{WA_MEDIA_DIR}/{number}-{stamp}.{ext}"
+    with open(path, "wb") as f:
+        f.write(data_bytes)
+    return path
+
+
+def _audio_format(mime: str) -> str:
+    """Formato p/ o content part input_audio do chat-completions."""
+    m = (mime or "").split(";")[0].strip().lower()
+    return {
+        "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp3": "mp3",
+        "audio/mp4": "m4a", "audio/aac": "aac",
+        "audio/wav": "wav", "audio/x-wav": "wav", "audio/amr": "amr",
+    }.get(m, "ogg")
+
+
+def _ask_hermes_media(number: str, kind: str, data_bytes: bytes, mime: str, caption: str) -> str:
+    """Hermes multimodal via /v1/chat/completions (content image_url / input_audio).
+
+    Levanta ModelMediaUnsupported em 4xx do upstream (modelo/endpoint não aceita a
+    modalidade) ou resposta vazia/erro — o caller manda o aviso de "não comporta".
+    """
+    if not UPSTREAM_KEY:
+        return "(bridge sem WA_BRIDGE_UPSTREAM_KEY configurada)"
+    b64 = base64.b64encode(data_bytes).decode("ascii")
+    prompt = caption.strip() or (
+        "Descreva e responda sobre esta imagem." if kind == "image"
+        else "Transcreva e responda a este áudio."
+    )
+    if kind == "image":
+        part = {"type": "image_url", "image_url": {"url": f"data:{mime or 'image/jpeg'};base64,{b64}"}}
+    else:
+        part = {"type": "input_audio", "input_audio": {"data": b64, "format": _audio_format(mime)}}
+    body = json.dumps({
+        "model": MODEL,
+        "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}, part]}],
+        "stream": False,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"{UPSTREAM}/v1/chat/completions", data=body, method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {UPSTREAM_KEY}",
+            "X-Hermes-Session-Id": _session_key(number),
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            out = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8")[:300]
+        except Exception:  # noqa: BLE001
+            pass
+        if 400 <= e.code < 500:
+            # 4xx num envio multimodal = modelo/endpoint não suporta a modalidade.
+            raise ModelMediaUnsupported(f"HTTP {e.code}: {detail}")
+        raise
+    if isinstance(out, dict) and out.get("error"):
+        raise ModelMediaUnsupported(str(out.get("error")))
+    try:
+        content = out["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        content = None
+    if not content:
+        raise ModelMediaUnsupported("resposta vazia do modelo")
+    return content
+
+
+def _ask_openclaw_media(number: str, kind: str, caption: str, path: str) -> str:
+    """OpenClaw: passa o arquivo salvo + legenda no prompt (o agente decide se interpreta)."""
+    desc = "imagem" if kind == "image" else "áudio"
+    msg = f"[O usuário enviou um(a) {desc} pelo WhatsApp, salvo em {path}."
+    if caption:
+        msg += f" Legenda: {caption}."
+    msg += " Interprete com suas ferramentas se possível; senão, peça os detalhes por texto.]"
+    return _ask_openclaw(number, msg)
+
+
+def _process_media(number: str, media: dict) -> None:
+    """Worker para mensagens de mídia: baixa, salva em _shared/assets/wa e manda pro agente."""
+    kind = media["kind"]
+    caption = media.get("caption") or ""
+    _log(f"in  <- {number}: [{kind}] caption={caption[:60]!r}")
+    done = threading.Event()
+
+    def _ack_if_slow() -> None:
+        if ACK_AFTER > 0 and not done.wait(ACK_AFTER):
+            _reply_safe(number, "🛠️ Recebi sua mídia, tô processando — já te respondo.")
+
+    threading.Thread(target=_ack_if_slow, daemon=True).start()
+
+    # Só imagem e áudio são interpretados pelo modelo. Vídeo/documento: aviso amigável.
+    if kind not in ("image", "audio"):
+        done.set()
+        _reply_safe(number, "Recebi seu arquivo, mas por ora só interpreto *imagem* e *áudio*. Pode mandar por texto?")
+        return
+
+    try:
+        data_bytes, mime = _fetch_media_bytes(media)
+        path = _save_media(number, media, data_bytes, mime)
+        _log(f"     media salva: {path} ({len(data_bytes)} bytes, {mime or '?'})")
+        if AGENT == "openclaw":
+            reply = _ask_openclaw_media(number, kind, caption, path)
+        else:
+            reply = _ask_hermes_media(number, kind, data_bytes, mime, caption)
+        done.set()
+        _send_whatsapp(number, reply)
+        _log(f"out -> {number}: {reply[:80]!r}")
+    except ModelMediaUnsupported as e:
+        done.set()
+        _log(f"modelo nao comporta {kind} p/ {number}: {e}")
+        tipo = "imagens" if kind == "image" else "áudios"
+        _reply_safe(number, f"⚠️ O modelo configurado neste agente não interpreta {tipo}. Por favor, descreva por texto.")
+    except Exception as e:  # noqa: BLE001
+        done.set()
+        _log(f"ERRO processando mídia de {number}: {e}")
+        _reply_safe(number, "⚠️ Não consegui baixar/processar a mídia. Pode tentar de novo ou enviar por texto?")
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # silencia o log padrao ruidoso do http.server
         pass
@@ -331,12 +576,19 @@ class Handler(BaseHTTPRequestHandler):
         extracted = _extract(data)
         if not extracted:
             return
-        number, text, msg_id = extracted
+        number = extracted["number"]
+        text = extracted["text"]
+        msg_id = extracted["msg_id"]
+        media = extracted["media"]
         if _seen(msg_id):
             return
         # Allowlist com variantes BR (com/sem 9) — casa nas duas formas.
         if ALLOWED and not (_br_variants(number) & ALLOWED):
             _log(f"ignorado (fora da allowlist): {number}")
+            return
+        # Mídia (imagem/áudio/...): baixa e manda pro agente em worker separado.
+        if media is not None:
+            threading.Thread(target=_process_media, args=(number, media), daemon=True).start()
             return
         # Comando de reset vindo do WhatsApp -> nova sessao, sem chamar o agente.
         if text.strip().lower() in RESET_CMDS:

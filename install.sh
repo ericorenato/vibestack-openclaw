@@ -371,6 +371,40 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
     info 'media-editor pulado — preencha os B2_* no .env depois se precisar.'
   fi
 
+  # Storage S3/MinIO do Evolution p/ MIDIA RECEBIDA no WhatsApp (imagem/audio).
+  # Opcional: sem isso o bridge baixa a midia on-demand (/message/downloadmedia).
+  # Com isso, o Evolution sobe no bucket e manda a mediaUrl no webhook. Pode reusar
+  # as credenciais do Backblaze B2 ja' informadas acima.
+  minio_default='n'; [ "$(get_env_var .env EVOLUTION_MINIO_ENABLED)" = "true" ] && minio_default='y'
+  if ask_yesno 'Configurar storage S3/MinIO do Evolution p/ receber midia (imagem/audio)? (opcional)' "$minio_default"; then
+    info 'Enter aceita os defaults derivados do Backblaze B2 acima.'
+    b2_ep_now="$(get_env_var .env B2_ENDPOINT_URL)"
+    mh_default="$(printf '%s' "$b2_ep_now" | sed -E 's#^https?://##')"
+    mr_default="$(printf '%s' "$mh_default" | sed -E 's/^s3\.([^.]+)\..*/\1/')"
+    [ "$mr_default" = "$mh_default" ] && mr_default=""
+    cur_host="$(get_env_var .env EVOLUTION_MINIO_ENDPOINT)"; [ -z "$cur_host" ] && cur_host="$mh_default"
+    m_host="$(ask 'MINIO_ENDPOINT (host SEM https://)' "$cur_host")"
+    cur_bucket="$(get_env_var .env EVOLUTION_MINIO_BUCKET)"; [ -z "$cur_bucket" ] && cur_bucket="$(get_env_var .env B2_BUCKET)"
+    m_bucket="$(ask 'MINIO_BUCKET' "$cur_bucket")"
+    cur_ak="$(get_env_var .env EVOLUTION_MINIO_ACCESS_KEY)"; [ -z "$cur_ak" ] && cur_ak="$(get_env_var .env B2_KEY_ID)"
+    m_ak="$(ask 'MINIO_ACCESS_KEY' "$cur_ak")"
+    cur_sk="$(get_env_var .env EVOLUTION_MINIO_SECRET_KEY)"; [ -z "$cur_sk" ] && cur_sk="$(get_env_var .env B2_APP_KEY)"
+    m_sk="$(ask 'MINIO_SECRET_KEY' "$cur_sk")"
+    cur_region="$(get_env_var .env EVOLUTION_MINIO_REGION)"; [ -z "$cur_region" ] && cur_region="$mr_default"
+    m_region="$(ask 'MINIO_REGION' "$cur_region")"
+    set_env_var .env EVOLUTION_MINIO_ENABLED true
+    set_env_var .env EVOLUTION_MINIO_ENDPOINT "$m_host"
+    set_env_var .env EVOLUTION_MINIO_BUCKET "$m_bucket"
+    set_env_var .env EVOLUTION_MINIO_ACCESS_KEY "$m_ak"
+    set_env_var .env EVOLUTION_MINIO_SECRET_KEY "$m_sk"
+    set_env_var .env EVOLUTION_MINIO_REGION "$m_region"
+    set_env_var .env EVOLUTION_MINIO_USE_SSL true
+    info "Storage do Evolution ligado: $m_host / bucket $m_bucket (midia recebida vai pro S3)."
+  else
+    set_env_var .env EVOLUTION_MINIO_ENABLED false
+    info 'Storage do Evolution desligado — o bridge baixa midia on-demand (/message/downloadmedia).'
+  fi
+
   # Agente que responde o canal de WhatsApp (Telegram-like): hermes | openclaw.
   wa_agent="$(ask 'Agente que responde o WhatsApp (hermes|openclaw)' "$(get_env_var .env WA_BRIDGE_AGENT)")"
   [ -n "$wa_agent" ] && set_env_var .env WA_BRIDGE_AGENT "$wa_agent"
