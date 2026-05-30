@@ -1,14 +1,17 @@
 # vibestack-openclaw
 
-Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) com Ollama embutido e middleware MCP customizado pra Meta Ads. Pronta pra subir numa VPS (Hetzner, DigitalOcean, AWS Lightsail — qualquer host com Docker) e acessar do laptop via SSH tunnel.
+Stack Docker self-hosted de uma **agência de tráfego com IA**: o [OpenClaw](https://github.com/openclaw/openclaw) com Ollama embutido, agentes especializados (gestor, criativo, analista…) e middleware MCP customizado que dá a eles **Meta Ads**, **geração de imagem/vídeo** e um **canal de WhatsApp** (recebe e responde, inclusive imagem e áudio). Pronta pra subir numa VPS (Hetzner, DigitalOcean, AWS Lightsail — qualquer host com Docker) e acessar do laptop via SSH tunnel — ou rodar localmente no Mac/Windows.
+
+> **Novo por aqui?** Vá direto pra [Instalação rápida](#instalação-rápida-linux--mac--windows) (script `install.sh` que pergunta tudo e builda) ou siga o [Tutorial completo do zero](#tutorial-completo-do-zero) passo a passo. Cada integração (Meta Ads, B2, WhatsApp, Higgsfield, AtlasCloud) é **opcional** — preencha só o que for usar.
 
 **O que você ganha rodando isso:**
-- Um gateway OpenClaw acessível em `http://127.0.0.1:18789` (via tunnel do laptop).
+- Um gateway OpenClaw acessível em `http://127.0.0.1:18789` (direto no Mac/Windows; via tunnel SSH na VPS).
 - Ollama no mesmo container — modelos locais (`llama3.2:3b`, `qwen2.5:7b`, etc.) sem dependência de API paga.
 - 70 tools MCP pra Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, datasets/pixels, product sets/items/feeds, **custom audiences**, **lookalikes**, **duplicação de campanhas/adsets/ads**) — agente cria/edita/lê/duplica/segmenta direto. 60 via CLI oficial + 10 via Graph API direta (audience/copies, que a CLI não cobre).
-- Geração de mídia para o Criativo: **Higgsfield** (CLI envelopado em MCP — imagem/vídeo/soul-id) e **AtlasCloud** (MCP oficial, hub de 300+ modelos). Veja [Geração de mídia & hub de modelos](#geração-de-mídia--hub-de-modelos).
+- **Canal de WhatsApp** (Evolution Go): o agente **recebe e responde** mensagens — inclusive interpreta **imagem e áudio** (se o modelo do agente for multimodal). Veja [WhatsApp (Evolution Go)](#whatsapp-evolution-go).
+- **Geração de mídia** para o Criativo: **Higgsfield** (CLI envelopado em MCP — imagem/vídeo/soul-id) e **AtlasCloud** (MCP oficial, hub de 300+ modelos). Veja [Geração de mídia & hub de modelos](#geração-de-mídia--hub-de-modelos).
 - Bloco demarcado no `Dockerfile` pra "bakear" suas próprias CLIs/binários (gog, goplaces, wacli já vêm de exemplo).
-- **Hermes Agent** (NousResearch) no mesmo container como alternativa ao OpenClaw — API OpenAI-compatible em `http://127.0.0.1:8642/v1`, com acesso às **mesmas** tools MCP (meta-ads, media-editor). Veja [Hermes Agent](#hermes-agent-alternativa-ao-openclaw).
+- **Hermes Agent** (NousResearch) no mesmo container como alternativa ao OpenClaw — API OpenAI-compatible em `http://127.0.0.1:8642/v1`, com acesso aos **mesmos** MCP servers (meta-ads, media-editor, whatsapp, higgsfield, atlascloud). Veja [Hermes Agent](#hermes-agent-alternativa-ao-openclaw).
 
 ---
 
@@ -36,8 +39,10 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 - [Baixar modelos no Ollama](#baixar-modelos-no-ollama)
 - [Hermes Agent (alternativa ao OpenClaw)](#hermes-agent-alternativa-ao-openclaw)
 - [WhatsApp (Evolution Go)](#whatsapp-evolution-go)
+- [Geração de mídia & hub de modelos (Higgsfield + AtlasCloud)](#geração-de-mídia--hub-de-modelos)
 - [Referência técnica](#referência-técnica)
 - [Troubleshooting](#troubleshooting)
+- [Referências](#referências)
 
 ---
 
@@ -783,13 +788,13 @@ docker compose up -d        # sobe openclaw-vibestack + evolution-go + postgres
 
 ## Geração de mídia & hub de modelos
 
-Dois caminhos para o agente Criativo gerar imagem/vídeo, com **modelos de auth diferentes** (cada um pelo que a plataforma oferece):
+São **opcionais** — habilite se quiser que o agente **Criativo** gere imagem/vídeo. Há dois caminhos, com **modelos de auth diferentes** (cada um pelo que a plataforma oferece). Pode usar um, outro, ou os dois.
 
 ### Higgsfield (CLI + MCP) — auth por navegador (1x)
 
 O Higgsfield não tem MCP oficial funcional, então a imagem instala o **CLI** (`@higgsfield/cli`) e o expõe via um middleware MCP próprio (`higgsfield_cli_mcp.py`): tools `generate_image`, `generate_video`, `soul_id_create`, `upload`, etc.
 
-A autenticação é **OAuth no navegador** (não tem API key). Por isso o aluno loga **uma vez**, e o token persiste num volume (`${HIGGSFIELD_DATA_DIR}` → `/root/.higgsfield`) — sobrevive a restart/rebuild:
+A autenticação é **OAuth no navegador** (não tem API key). Por isso você loga **uma vez** e o token persiste num volume (`${HIGGSFIELD_DATA_DIR}` → `/root/.higgsfield`) — sobrevive a restart/rebuild:
 
 ```bash
 # 1x (abre uma URL/código pra logar no navegador):
@@ -798,7 +803,7 @@ docker compose exec openclaw-vibestack higgsfield auth login
 docker compose exec openclaw-vibestack higgsfield auth status
 ```
 
-Tokens são curtos: **só refaça o login quando `auth status` acusar expiração** — não a cada restart, graças ao volume. Mídia gerada cai em `/root/.openclaw/workspace/_shared/assets/` (persistente). Para o rosto do Érico, treine um `soul_id` uma vez a partir da seed `seeds/image/erico-rosto.jpeg` (B2) e reuse — veja `agency/criativo/AGENTS.md`.
+Tokens são curtos: **só refaça o login quando `auth status` acusar expiração** — não a cada restart, graças ao volume. Mídia gerada cai em `/root/.openclaw/workspace/_shared/assets/` (persistente). Para gerar sempre com um **rosto fixo** (ex.: uma pessoa da marca), treine um `soul_id` uma vez a partir de uma seed em `seeds/image/` (no Backblaze B2) e reuse — veja `agency/criativo/AGENTS.md`.
 
 ### AtlasCloud (MCP oficial) — auth por API key (env)
 
@@ -1016,3 +1021,8 @@ Já tem proteção: `--no-color --no-input` + normalização de `"No results."` 
 - Meta Ads CLI guia oficial: https://developers.facebook.com/documentation/ads-commerce/ads-ai-connectors/ads-cli
 - Ollama: https://ollama.com
 - MCP (Model Context Protocol): https://modelcontextprotocol.io
+- Hermes Agent (NousResearch): https://github.com/NousResearch/hermes-agent
+- Higgsfield CLI: https://higgsfield.ai/cli
+- AtlasCloud (CLI/MCP, hub de modelos): https://www.atlascloud.ai/cli
+- Evolution Go (WhatsApp API): https://github.com/EvolutionAPI/evolution-go
+- Backblaze B2 (storage S3-compatible): https://www.backblaze.com/cloud-storage
