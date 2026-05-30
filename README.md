@@ -95,11 +95,18 @@ O `install.sh` é **idempotente** (pode rodar de novo sem quebrar nada) e cuida 
 6. **Normaliza o `entrypoint.sh` pra LF** — evita o erro `entrypoint not found` em checkouts feitos no Windows.
 7. **Builda a imagem** (`docker compose build`) e **para antes do `up`** — você sobe a stack manualmente.
 
+> **⚠️ Windows: rode no Git Bash ou WSL — não no PowerShell/CMD.** O `install.sh` é um script **bash**; no PowerShell/CMD o `curl ... | bash` e o `./install.sh` **não funcionam** (lá `curl` é alias de `Invoke-WebRequest` e não existe `bash`). **O comando é o mesmo do Mac/Linux** — só precisa do terminal certo. Passo a passo no Windows:
+>
+> 1. **Instale o Git for Windows** (traz o **Git Bash**). No PowerShell: `winget install --id Git.Git -e` — ou baixe em https://git-scm.com/download/win. *(Alternativa: WSL, com `wsl --install` no PowerShell como administrador.)*
+> 2. Deixe o **Docker Desktop aberto** (se usar WSL, ative *Settings → Resources → WSL integration*).
+> 3. Abra o **Git Bash** (menu Iniciar → "Git Bash") e **cole o mesmo comando abaixo** — roda idêntico ao Mac/Linux.
+
 Duas maneiras de chamá-lo:
 
 **1a — direto da web (o instalador clona o repo sozinho):**
 
 ```bash
+# Mac/Linux: terminal normal  •  Windows: Git Bash ou WSL (NÃO PowerShell/CMD)
 curl -fsSL https://raw.githubusercontent.com/ericorenato/vibestack-openclaw/main/install.sh | bash
 ```
 
@@ -128,6 +135,8 @@ docker compose up -d   # de dentro da pasta do projeto
 ### Forma 2 — Instalação manual (você cria as pastas e o `.env`)
 
 Pra quem quer controle total ou entender cada parte. Faz exatamente o que o instalador faz, mas na mão. **No Mac/Windows os caminhos são no seu `$HOME`; na VPS são em `/root`** — não use `/root/...` no Mac, senão dá `mounts denied`.
+
+> **Windows:** os comandos abaixo (`git`, `mkdir -p`, `openssl`, `cp`, `tr`) são de shell **bash** — rode no **Git Bash** ou **WSL**, não no PowerShell/CMD.
 
 ```bash
 # 1. Clone o repo e entre nele
@@ -842,6 +851,32 @@ Pronto — `atlascloud` aparece em `openclaw mcp list` (e no Hermes). Por que AP
 ├── .env.example
 └── README.md
 ```
+
+### MCP servers registrados (o que cada agente ganha)
+
+O `entrypoint.sh` registra estes MCP servers no boot (no OpenClaw via `openclaw mcp set` e no Hermes via merge no `config.yaml`). Cada um é **opcional** — sobe sempre, mas só funciona quando você preenche a credencial correspondente no `.env`. Confira com `docker compose exec openclaw-vibestack openclaw mcp list`.
+
+| MCP server   | O que dá ao agente                                                   | Como é instalado                                                        | Auth (no `.env`)                          | Documentação |
+|--------------|----------------------------------------------------------------------|-------------------------------------------------------------------------|-------------------------------------------|--------------|
+| `meta-ads`   | 70 tools de Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, pixels, custom audiences, lookalikes, duplicação) | middleware Python (`meta_ads_cli_mcp.py`) envelopando a CLI oficial `meta` | `META_ACCESS_TOKEN` (+ `META_AD_ACCOUNT_ID`) | [Tools do MCP Meta Ads](#tools-do-mcp-meta-ads) |
+| `media-editor` | Edição de mídia com **ffmpeg** (cortar, redimensionar, overlay, trilha, validar p/ Meta) + **Backblaze B2** como storage de seeds/derivações | middleware Python (`media_editor_mcp.py`) + `ffmpeg` na imagem            | `B2_KEY_ID` / `B2_APP_KEY` / `B2_BUCKET` / `B2_ENDPOINT_URL` | (este README, seções B2) |
+| `whatsapp`   | Enviar texto/mídia e gerir a instância (QR/status) via Evolution Go  | middleware Python (`whatsapp_evolution_mcp.py`)                          | `EVOLUTION_API_KEY` / `EVOLUTION_INSTANCE_TOKEN` | [WhatsApp (Evolution Go)](#whatsapp-evolution-go) |
+| `higgsfield` | Gerar **imagem/vídeo** e treinar **soul-id** (rosto fiel)            | middleware Python (`higgsfield_cli_mcp.py`) envelopando o CLI `@higgsfield/cli` (instalado na imagem) | login no navegador 1x (token em volume `${HIGGSFIELD_DATA_DIR}`) | [Geração de mídia](#geração-de-mídia--hub-de-modelos) |
+| `atlascloud` | Hub de **300+ modelos** (imagem/vídeo/LLM)                           | MCP server **oficial** `atlascloud-mcp` (npm, instalado na imagem)      | `ATLASCLOUD_API_KEY`                      | [Geração de mídia](#geração-de-mídia--hub-de-modelos) |
+
+> Inbound de WhatsApp (receber mensagens, inclusive imagem/áudio) é o `whatsapp_bridge.py` — não é um MCP, é um serviço que o entrypoint sobe. Veja [WhatsApp (Evolution Go)](#whatsapp-evolution-go).
+
+### Componentes "bakeados" na imagem
+
+Além dos MCP servers acima, o `Dockerfile` instala na imagem (tudo num container só):
+
+- **OpenClaw** (gateway + UI, porta 18789) — agente principal, clonado e buildado do upstream.
+- **Hermes Agent** (NousResearch) — alternativa ao OpenClaw (API OpenAI-compatible 8642 + dashboard 9119), com os mesmos MCP servers. Veja [Hermes Agent](#hermes-agent-alternativa-ao-openclaw).
+- **Ollama** (porta 11434) — roda modelos locais (`llama3.2`, `qwen2.5`, etc.) sem API paga. **Não é MCP**: é o provedor de modelo que os agentes podem usar. Veja [Baixar modelos no Ollama](#baixar-modelos-no-ollama).
+- **CLIs/SDKs**: `meta` (Meta Ads, PyPI), `@higgsfield/cli`, `atlascloud-mcp`, `ffmpeg`, `boto3` (B2), e os binários de exemplo `gog`/`goplaces`/`wacli`.
+- **Evolution Go** + **Postgres** — serviços irmãos no compose (não na mesma imagem) que dão o canal de WhatsApp.
+
+Pra adicionar os seus, veja [Adicionar uma CLI nova à imagem](#adicionar-uma-cli-nova-à-imagem) e [Adicionar um MCP server novo](#adicionar-um-mcp-server-novo).
 
 ### Tools do MCP Meta Ads
 
