@@ -970,6 +970,8 @@ Para gerar mídia **do zero** (em vez de transformar uma seed), use os MCPs [`hi
 
 ### Arquitetura multi-agente recomendada (opcional)
 
+> 📁 **Prompts prontos:** a pasta [`agency/`](agency/) traz os 6 agentes deste padrão como **templates** (com placeholders `{{...}}` pra você adaptar ao seu contexto). Veja o [`agency/README.md`](agency/README.md) pra instruções.
+
 Esse MCP é o **executor** — quem realmente fala com a Meta. Mas pra operar tráfego pago com qualidade, vale ter agentes especializados em torno dele. Padrão sugerido (6 agentes, todos no mesmo OpenClaw):
 
 | Agente | Trigger | Lê | Escreve | MCP? |

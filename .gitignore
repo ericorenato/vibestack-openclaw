@@ -8,5 +8,9 @@ node_modules/
 /openclaw.json
 /openclaw.json.bak*
 
-# Dados locais dos agentes OpenClaw (sessions, sandbox, configs por agente).
-/agency/
+# agency/ = templates de prompt dos agentes (IDENTITY/SOUL/USER/TOOLS/AGENTS).
+# SÃO versionados (alunos baixam, trocam os {{placeholders}} e carregam no OpenClaw).
+# Só ignoramos artefatos de RUNTIME que o OpenClaw porventura escreva aqui:
+/agency/**/sessions/
+/agency/**/sandbox/
+/agency/**/.runtime/
