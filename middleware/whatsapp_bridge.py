@@ -296,7 +296,25 @@ def _ask_openclaw(number: str, text: str) -> str:
         out = json.loads(out_raw)
     except json.JSONDecodeError:
         return out_raw or "(resposta vazia do openclaw)"
-    # Procura o texto da resposta em chaves comuns do --json.
+    # Formato atual do `openclaw agent --json`: o texto da resposta fica em
+    # result.payloads[].text (varios payloads = varias mensagens). Junta os textos.
+    if isinstance(out, dict):
+        res = out.get("result")
+        if isinstance(res, dict):
+            payloads = res.get("payloads")
+            if isinstance(payloads, list):
+                parts = [p["text"] for p in payloads
+                         if isinstance(p, dict) and isinstance(p.get("text"), str) and p["text"].strip()]
+                if parts:
+                    return "\n\n".join(parts)
+            # Fallback: texto final consolidado em result.meta.
+            meta = res.get("meta")
+            if isinstance(meta, dict):
+                for mk in ("finalAssistantVisibleText", "finalAssistantRawText"):
+                    mv = meta.get(mk)
+                    if isinstance(mv, str) and mv.strip():
+                        return mv
+    # Fallback legado: chaves de topo de versoes antigas do --json.
     for k in ("reply", "text", "message", "content", "response", "output", "finalText"):
         v = out.get(k) if isinstance(out, dict) else None
         if isinstance(v, str) and v.strip():
