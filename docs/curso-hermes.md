@@ -69,7 +69,7 @@ Os **dois têm vários agentes**. A diferença não é "um × muitos" — é **c
 - **OpenClaw = organograma com repasse automático.** Você cria **agentes nomeados e permanentes** (Diretor, Analista, Gestor…) que **se chamam sozinhos dentro de uma mesma conversa** (o Diretor aciona o Analista, que aciona o Gestor, num único turno). É a sua pasta `agency/`. Pense numa **agência com departamentos que conversam em tempo real**.
 - **Hermes = vários agentes (chamados *profiles*) que colaboram por um "quadro de trabalho".** Cada **profile** é um agente completo e independente (personalidade, modelo, memória e ferramentas próprios). Eles **não se chamam automaticamente** dentro de uma conversa; em vez disso, coordenam-se por **mecanismos compartilhados**: o **quadro Kanban** (você atribui uma tarefa a um profile e ele a executa), o **swarm** (vários profiles em paralelo → verificador → sintetizador) e a **delegação efêmera** (ajudantes temporários para subtarefas). Pense num **time que se organiza por um quadro de tarefas**, não por uma ligação ao vivo entre departamentos.
 
-> ⚠️ **Correção importante (e a resposta às suas perguntas):** o Hermes **é multi-agente sim** — só que "agente" no Hermes se chama **profile**. Por isso a interface tem área de multi-agente e por isso a importação do OpenClaw traz **vários** (um profile por agente). O que o Hermes **não** faz é o **repasse automático nomeado dentro de um único turno** (o "organograma vivo" do OpenClaw). Veja a [Seção 7](#7-o-organograma-como-montar-um-time) e o [FAQ](#faq-multi-agente-profiles-e-organograma).
+> ⚠️ **Correção importante (e a resposta às suas perguntas):** o Hermes **é multi-agente sim** — só que "agente" no Hermes se chama **profile**, e você cria quantos quiser. Por isso a interface tem área de multi-agente. *(A importação `hermes claw migrate` traz **configurações, memórias, skills e chaves** do OpenClaw — os agentes em si você recria como profiles, manualmente; ver [Seção 8](#8-transferir-do-openclaw-para-o-hermes).)* O que o Hermes **não** faz é o **repasse automático nomeado dentro de um único turno** (o "organograma vivo" do OpenClaw). Veja a [Seção 7](#7-o-organograma-como-montar-um-time) e o [FAQ](#faq-multi-agente-profiles-e-organograma).
 
 ### Tabela comparativa
 
@@ -342,7 +342,7 @@ Há **três formas** de montar um time no Hermes — da mais simples à mais par
 Porque **ele é multi-agente** — cada agente é um **profile**. A área de multi-agente do dashboard é onde você gerencia esses profiles (criar, ver o modelo de cada um, acompanhar quem está executando tarefa). Eu fui impreciso antes ao chamar de "single-agent": o certo é que o Hermes roda **vários agentes (profiles)**; o que muda é a **forma de coordenação** (quadro de tarefas, não repasse automático).
 
 **"E por que ele deixa importar os agentes do OpenClaw, tendo mais de um?"**
-Porque a migração (`hermes claw migrate`) traz **cada agente do OpenClaw como um profile no Hermes**. Você tinha 6 agentes na `agency/` → viram (até) 6 profiles. Eles continuam sendo "vários agentes"; só que, no Hermes, a colaboração entre eles passa a ser pelo **Kanban/swarm/delegação** em vez do repasse automático em cadeia. *(O mapeamento exato — 1 profile por agente — confirme com `hermes claw migrate --dry-run`, que mostra o que será criado sem aplicar.)*
+Porque **multi-agente no Hermes = vários profiles**, e você pode criar quantos quiser (`hermes profile create`). A interface lista e gerencia esses profiles. **Importante:** a migração `hermes claw migrate` **não** recria sozinha cada agente da `agency/` como um profile — ela traz **configurações, memórias, skills e chaves de API** do OpenClaw (verificado no `--help`). Para ter seus 6 cargos como agentes, você **cria 6 profiles** e adapta o `SOUL.md` de cada um (Seção 8). Ou seja: o Hermes é multi-agente; só que os agentes você monta como profiles.
 
 **"Então qual é, de fato, a diferença para o OpenClaw?"**
 Só uma: **quem dá o próximo passo.** No OpenClaw, um agente **chama outro automaticamente** dentro da mesma conversa (organograma vivo). No Hermes, **você (ou o quadro Kanban, ou o swarm) decide** qual profile pega cada tarefa. Mesma quantidade de agentes; gestão diferente.
@@ -484,7 +484,7 @@ hermes kanban boards create criativos          # cria o quadro "criativos"
 hermes kanban --board criativos create "Banner da home" --assignee criativo
 hermes kanban --board criativos list
 ```
-> Cada **board** é um quadro independente (ex.: um por cliente). O `--board <slug>` diz em qual quadro o comando age; sem ele, usa o quadro padrão. *(Confirme o nome exato do subcomando de criação na sua versão com `hermes kanban boards --help`.)*
+> Cada **board** é um quadro independente, com **DB e dispatcher próprios** (ex.: um por cliente/projeto) — tarefas de um quadro não colidem com as de outro. O primeiro quadro é o `default`. Subcomandos (verificados): `boards create <slug>` (criar), `boards list`, `boards switch <slug>` (deixa esse quadro como ativo), `boards show` (qual está ativo), `boards rename`, `boards rm`. O `--board <slug>` mira um quadro só naquele comando; sem ele, usa o ativo.
 
 **6) Enxame (swarm) — vários cargos numa meta só:**
 ```bash
@@ -593,29 +593,65 @@ hermes kanban --board campanhas stats      # contagem por status e por cargo
 
 > A grande diferença que você já conhece: no OpenClaw esse encadeamento é **automático dentro de um turno**; no Kanban do Hermes ele acontece pelo **quadro + dependências + dispatcher** (cada etapa numa sessão isolada). O resultado de negócio é o mesmo; a "engrenagem" é o quadro.
 
+### 🔧 Como o AGENTE usa o Kanban (function calling)
+
+Aqui vale separar **duas formas** de mexer no quadro — e é uma confusão comum:
+
+- **Você (humano)** mexe pela **interface** ou pelo **CLI** `hermes kanban ...`.
+- **O agente (modelo)** mexe por **chamada de função (tools)** — ele **não** roda o CLI. Ele tem um *toolset* de Kanban com funções como: `kanban_create`, `kanban_show`, `kanban_list`, `kanban_link`, `kanban_comment`, `kanban_heartbeat`, `kanban_block`, `kanban_unblock`, `kanban_complete`.
+
+**Como o "trabalhador" recebe a tarefa (o pulo do gato):** quando o dispatcher escolhe uma task e spawna o profile dono como worker, ele injeta no ambiente a variável `HERMES_KANBAN_TASK=t_abcd`. **Essa variável liga o toolset de Kanban no schema do modelo** — ou seja, o agente "acorda" já sabendo qual é a sua task e com as funções para mexer nela. (Profiles "orquestradores" também podem ligar o toolset `kanban` explicitamente.)
+
+**O ciclo típico de um worker** (tudo via function calling, sem CLI):
+```text
+kanban_show()                      → lê o worker_context (o que precisa fazer + dados da task)
+… faz o trabalho (usa os MCP: meta-ads, media-editor, higgsfield…) …
+kanban_heartbeat(note="andando")   → sinal de vida (worker ainda vivo)
+… termina …
+kanban_complete(summary="feito: campanha 123 criada", metadata={...})
+```
+Tradução para o negócio: **o cartão do Kanban é "a ordem de serviço" do funcionário (profile).** Ele abre a ordem (`kanban_show`), executa com suas ferramentas, dá sinais de progresso (`kanban_heartbeat`) e fecha com um resumo (`kanban_complete`) — sozinho, numa sessão isolada.
+
+### 🧭 Quando usar Kanban (× `delegate_task` × cron × chat)
+
+Nem todo trabalho pede Kanban. Use o **mapa de decisão**:
+
+| Situação | Use | Por quê |
+|---|---|---|
+| Preciso de **uma resposta rápida** no meio do raciocínio, sem humano, e o resultado volta para o próprio agente | **`delegate_task`** | É uma **chamada de função** efêmera (ajudante temporário que some) |
+| O trabalho **cruza cargos** (um faz, outro continua), **precisa sobreviver a restart**, pode **precisar de um humano** ou ser **retomado/auditado depois** | **Kanban** | Cada repasse vira uma **linha visível** que qualquer profile (ou você) vê e edita |
+| Quero algo **recorrente no horário** (todo dia 9h, a cada 2h) | **`cron`** | Agenda; pode até criar tasks no Kanban |
+| É só uma **pergunta/uma ação pontual** agora | **Chat direto** (`hermes`) | Não precisa de fila nem de quadro |
+
+> **A regra de ouro (da documentação oficial):** *"`delegate_task` é uma chamada de função; o Kanban é uma fila de trabalho onde cada repasse é uma linha que qualquer profile (ou humano) pode ver e editar."*
+
+**Os 3 cenários onde o Kanban brilha** (exemplos da doc):
+1. **Triagem com várias frentes + humano no meio** — ex.: vários pesquisadores em paralelo → analista → redator, com você aprovando no caminho.
+2. **Operações recorrentes** — ex.: o brief diário das campanhas (combinado com `cron`).
+3. **Pipelines de várias etapas** — ex.: decompor → executar em paralelo → revisar (exatamente o fluxo da campanha que vimos acima).
+
 ---
 
 ## 8. Transferir do OpenClaw para o Hermes
 
-Há duas camadas para "transferir": (1) **configurações/ferramentas/segredos** (automático) e (2) **a personalidade dos agentes** (manual, porque o modelo de organização é diferente).
+Há duas camadas para "transferir": (1) o que vem **automático** (configurações, memórias, skills, chaves) e (2) os **agentes em si** (manual — você cria os profiles e adapta os prompts).
 
-### 8.1 Migração automática de configurações — `hermes claw migrate`
+### 8.1 O que o `hermes claw migrate` traz (verificado no `--help`)
 
-O Hermes traz um comando dedicado para importar do OpenClaw:
+O comando importa de uma instalação do OpenClaw: **configurações (settings), memórias, skills e chaves de API**. Ele mostra um **preview** sempre e, por padrão, grava um **backup** de `~/.hermes/` antes de aplicar (restaurável com `hermes import`).
 
 ```bash
-hermes claw migrate --dry-run                 # SIMULA: mostra o que viria, sem aplicar
-hermes claw migrate --preset user-data        # traz dados do usuário (memórias, sessões…)
-hermes claw migrate --preset full --migrate-secrets   # traz tudo, inclusive chaves/segredos
+hermes claw migrate --dry-run                 # SÓ mostra o que viria, sem aplicar (comece por aqui)
+hermes claw migrate                           # aplica o preset 'full' (padrão), SEM segredos
+hermes claw migrate --migrate-secrets --yes   # inclui chaves de API/tokens; pula a confirmação
 ```
-- ⭐ **Sempre comece com `--dry-run`** para ver o que será trazido antes de aplicar.
-- `--preset full` é o mais abrangente; `--migrate-secrets` inclui credenciais (use com cuidado).
+Flags úteis (todas verificadas): `--source <caminho>` (pasta do OpenClaw; padrão `~/.openclaw`), `--preset full|user-data` (padrão `full`), `--migrate-secrets` (inclui chaves — **nenhum** preset traz segredos sem ela), `--overwrite`, `--skill-conflict skip|overwrite|rename`, `--no-backup`, `--yes`.
 
-Isso traz modelo/provedor, MCP, dados — e **cada agente do OpenClaw como um profile no Hermes** (por isso "vem mais de um"). Rode o `--dry-run` para ver exatamente quais profiles seriam criados antes de aplicar. O que **não** vem é o "repasse automático em cadeia" do organograma do OpenClaw — no Hermes os profiles passam a se coordenar por Kanban/swarm/delegação.
+> ⚠️ **Correção (eu havia exagerado antes):** o `claw migrate` **não** recria automaticamente cada agente da `agency/` como um profile. Ele traz **configurações, memórias, skills e chaves** — não os agentes. Para ter seus cargos como agentes no Hermes, você **cria os profiles** (`hermes profile create <nome>`) e adapta o `SOUL.md` de cada um (passo abaixo). O `--dry-run` mostra exatamente o que será importado.
 
-### 8.2 Ajustar a "personalidade" depois de migrar (manual)
+### 8.2 Recriar os agentes como profiles (manual)
 
-Cada agente vira um profile com seu `SOUL.md`. Se quiser refinar (ou montar do zero em vez de migrar), o mapeamento dos arquivos do OpenClaw é:
+Para cada agente da `agency/`, **crie um profile** (`hermes profile create <nome>`) e monte o `SOUL.md` dele a partir dos arquivos do OpenClaw, pelo mapeamento:
 
 | No OpenClaw (`agency/<agente>/`) | Vira, no Hermes |
 |---|---|
