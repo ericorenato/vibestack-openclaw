@@ -30,6 +30,51 @@ as_root() {
   else err "Sem root e sem sudo — rode como root ou instale o sudo. Comando: $*"; return 1; fi
 }
 
+# garante o git instalado; instala via gerenciador de pacotes se faltar.
+# Self-contained (detecta o SO via uname) pra poder ser chamada ja' no
+# bootstrap, antes da deteccao de SO do passo 1.
+ensure_git() {
+  command -v git >/dev/null 2>&1 && return 0
+  warn "Git ausente — tentando instalar."
+  case "$(uname -s)" in
+    Linux*)
+      if command -v apt-get >/dev/null 2>&1; then
+        as_root apt-get update -y && as_root apt-get install -y git
+      elif command -v dnf >/dev/null 2>&1; then as_root dnf install -y git
+      elif command -v yum >/dev/null 2>&1; then as_root yum install -y git
+      elif command -v pacman >/dev/null 2>&1; then as_root pacman -Sy --noconfirm git
+      elif command -v zypper >/dev/null 2>&1; then as_root zypper install -y git
+      elif command -v apk >/dev/null 2>&1; then as_root apk add --no-cache git
+      else
+        err "Nenhum gerenciador de pacotes conhecido — instale o Git manualmente e rode de novo."
+        return 1
+      fi
+      ;;
+    Darwin*)
+      if command -v brew >/dev/null 2>&1; then
+        brew install git
+      else
+        err "Git ausente. Rode 'xcode-select --install' (instala o Git da Apple) ou"
+        err "instale o Homebrew e use 'brew install git'; depois rode este instalador de novo."
+        return 1
+      fi
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      err "Git ausente. Instale o Git for Windows: https://git-scm.com/download/win"
+      err "(No Windows voce ja' precisa do Git Bash pra rodar este instalador.)"
+      return 1
+      ;;
+    *)
+      err "Instale o Git manualmente e rode de novo."
+      return 1
+      ;;
+  esac
+  if ! command -v git >/dev/null 2>&1; then
+    err "Git ainda ausente apos a tentativa de instalacao. Instale manualmente e rode de novo."
+    return 1
+  fi
+}
+
 # --- 0. bootstrap (curl | bash) --------------------------------------------
 # Se rodando solto (sem o repo por perto), clona do GitHub e se re-executa.
 REPO_URL="${OPENCLAW_REPO_URL:-https://github.com/ericorenato/vibestack-openclaw.git}"
@@ -48,15 +93,7 @@ fi
 
 if [ -z "$SCRIPT_DIR" ] || [ ! -f "$SCRIPT_DIR/docker-compose.yml" ]; then
   step "Bootstrap — baixando o projeto do GitHub"
-  if ! command -v git >/dev/null 2>&1; then
-    err "git nao encontrado — preciso dele pra clonar o projeto."
-    case "$(uname -s)" in
-      Darwin*) err "No macOS: rode 'xcode-select --install' (ou instale o Git) e tente de novo." ;;
-      Linux*)  err "No Linux: 'apt-get install -y git' (ou o gerenciador da sua distro)." ;;
-      *)       err "Instale o Git e tente de novo." ;;
-    esac
-    exit 1
-  fi
+  ensure_git || exit 1   # instala o git se faltar (preciso dele pra clonar)
   TARGET="${OPENCLAW_DIR:-$PWD/vibestack-openclaw}"
   if [ -d "$TARGET/.git" ] && [ -f "$TARGET/docker-compose.yml" ]; then
     info "Repo ja' existe em $TARGET — atualizando (git pull)."
@@ -129,50 +166,10 @@ fi
 
 # --- 1b. Git ---------------------------------------------------------------
 # Necessario pra clonar/atualizar o repo e pro build (Dockerfile clona o
-# OpenClaw via git). O bloco de bootstrap acima so' checa o git no modo
-# 'curl | bash'; rodando local (./install.sh) ele nunca era verificado.
+# OpenClaw via git). Rodando local (./install.sh) o git e' verificado aqui;
+# no modo 'curl | bash' ele ja' foi garantido no bootstrap acima.
 step "Verificando Git"
-if ! command -v git >/dev/null 2>&1; then
-  warn "Git ausente — tentando instalar."
-  case "$OS" in
-    linux)
-      if command -v apt-get >/dev/null 2>&1; then
-        as_root apt-get update -y && as_root apt-get install -y git
-      elif command -v dnf >/dev/null 2>&1; then
-        as_root dnf install -y git
-      elif command -v yum >/dev/null 2>&1; then
-        as_root yum install -y git
-      elif command -v pacman >/dev/null 2>&1; then
-        as_root pacman -Sy --noconfirm git
-      elif command -v zypper >/dev/null 2>&1; then
-        as_root zypper install -y git
-      elif command -v apk >/dev/null 2>&1; then
-        as_root apk add --no-cache git
-      else
-        err "Nenhum gerenciador de pacotes conhecido — instale o Git manualmente e rode de novo."
-        exit 1
-      fi
-      ;;
-    mac)
-      if command -v brew >/dev/null 2>&1; then
-        brew install git
-      else
-        err "Git ausente. Rode 'xcode-select --install' (instala o Git da Apple) ou"
-        err "instale o Homebrew e use 'brew install git'; depois rode este instalador de novo."
-        exit 1
-      fi
-      ;;
-    windows)
-      err "Git ausente. Instale o Git for Windows: https://git-scm.com/download/win"
-      err "(No Windows voce ja' precisa do Git Bash pra rodar este instalador.)"
-      exit 1
-      ;;
-  esac
-  if ! command -v git >/dev/null 2>&1; then
-    err "Git ainda ausente apos a tentativa de instalacao. Instale manualmente e rode de novo."
-    exit 1
-  fi
-fi
+ensure_git || exit 1
 info "git encontrado: $(git --version 2>/dev/null || echo '?')"
 
 # --- 2. Docker -------------------------------------------------------------
