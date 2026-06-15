@@ -2,6 +2,7 @@
 *.local
 .DS_Store
 node_modules/
+*.zip
 
 # openclaw.json da raiz e' a config real (copiada da VPS, contem secrets).
 # O template versionado fica em config/openclaw.json.
