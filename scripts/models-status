@@ -1,0 +1,22 @@
+#!/bin/sh
+# Diagnostico dos backends de modelos locais: instalado? rodando?
+#   docker compose exec openclaw-vibestack models-status
+echo "== Backends de modelos locais =="
+if command -v ollama >/dev/null 2>&1; then
+  if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    echo "Ollama:    instalado, RODANDO (http://127.0.0.1:11434)"
+  else
+    echo "Ollama:    instalado, parado  (suba com: start-ollama)"
+  fi
+else
+  echo "Ollama:    nao instalado (INSTALL_OLLAMA=false)"
+fi
+if command -v lms >/dev/null 2>&1; then
+  if curl -sf http://127.0.0.1:1234/v1/models >/dev/null 2>&1; then
+    echo "LM Studio: instalado, RODANDO (http://127.0.0.1:1234/v1)"
+  else
+    echo "LM Studio: instalado, parado  (suba com: start-lmstudio)"
+  fi
+else
+  echo "LM Studio: nao instalado (INSTALL_LMSTUDIO=false)"
+fi

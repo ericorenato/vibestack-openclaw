@@ -1,24 +1,23 @@
 #!/bin/sh
 # Entrypoint:
-#  1) Sobe ollama serve em background.
+#  1) Sobe os backends de modelos locais INSTALADOS na imagem (Ollama e/ou LM Studio).
 #  2) Registra MCP servers via `openclaw mcp set` (idempotente, valida schema).
 #  3) Executa o comando principal (compose passa 'openclaw gateway ...').
 set -e
 
-# --- Ollama em background --------------------------------------------------
-ollama serve >/var/log/ollama.log 2>&1 &
-OLLAMA_PID=$!
-
-for i in $(seq 1 30); do
-  if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-    echo "[entrypoint] ollama pronto (pid=$OLLAMA_PID)"
-    break
-  fi
-  if [ "$i" -eq 30 ]; then
-    echo "[entrypoint] AVISO: ollama nao respondeu em 30s — seguindo mesmo assim"
-  fi
-  sleep 1
-done
+# --- Backends de modelos locais (sobe o que estiver instalado) -------------
+# O ./install.sh decide o que entra na imagem (build args INSTALL_OLLAMA /
+# INSTALL_LMSTUDIO). Aqui apenas detectamos o que foi baixado e subimos cada um:
+#   - Ollama    -> porta 11434 (comportamento de sempre).
+#   - LM Studio -> daemon llmster + server OpenAI-compat na 1234.
+# Portas distintas: se ambos estiverem instalados, sobem os dois sem conflito.
+# Os helpers (start-ollama / start-lmstudio) sao idempotentes e tambem servem
+# para (re)start manual via `docker compose exec`. set -e desligado em volta
+# para que a falha de um backend nao derrube o boot do container.
+set +e
+if command -v ollama >/dev/null 2>&1; then start-ollama; fi
+if command -v lms >/dev/null 2>&1; then start-lmstudio; fi
+set -e
 
 # --- Registro de MCP servers (Infrastructure as Code via CLI) -------------
 # Usa 'openclaw mcp set' que valida schema e grava em mcp.servers.{nome}.

@@ -5,6 +5,10 @@ services:
       context: .
       args:
         OPENCLAW_REF: ${OPENCLAW_REF:-main}
+        # Backends de modelos locais — o ./install.sh grava estes no .env.
+        # Baixa-se APENAS o que estiver 'true'. O instalado sobe no boot.
+        INSTALL_OLLAMA: ${INSTALL_OLLAMA:-true}
+        INSTALL_LMSTUDIO: ${INSTALL_LMSTUDIO:-false}
     restart: unless-stopped
     env_file:
       - .env
@@ -73,6 +77,9 @@ services:
       - ${OPENCLAW_DATA_DIR}:/root/.openclaw
       # Ollama em mount separado (faz sentido — outro app)
       - ${OLLAMA_DATA_DIR}:/var/lib/ollama
+      # LM Studio — persiste SO' os modelos (o engine/CLI ficam na imagem, igual ao
+      # Ollama que persiste so' /var/lib/ollama). So' tem efeito se INSTALL_LMSTUDIO=true.
+      - ${LMSTUDIO_DATA_DIR:-/root/.lmstudio}:/root/.lmstudio/models
       # Hermes — HERMES_HOME (config.yaml, .env, sessions, skills, memories).
       # Persistente pra que a config do provider editada pelo usuario sobreviva a rebuilds.
       # Default /root/.hermes funciona na VPS (HOME=/root); install.sh ajusta no Mac/Windows.
@@ -85,6 +92,9 @@ services:
       # Loopback do host pra alcancar o ollama interno (opcional, SSH tunnel):
       #   ssh -N -L 11434:127.0.0.1:11434 root@VPS
       - "127.0.0.1:11434:11434"
+      # LM Studio — API OpenAI-compat (so' util se INSTALL_LMSTUDIO=true). SSH tunnel:
+      #   ssh -N -L 1234:127.0.0.1:1234 root@VPS  -> http://localhost:1234/v1
+      - "127.0.0.1:1234:1234"
       # Hermes — API OpenAI-compatible (porta separada, coexiste com o OpenClaw):
       #   ssh -N -L 8642:127.0.0.1:8642 root@VPS  -> http://localhost:8642/v1
       - "127.0.0.1:${HERMES_API_PORT:-8642}:8642"

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Sobe o Ollama em background (idempotente). Chamado pelo entrypoint no boot quando
+# o Ollama esta' instalado na imagem, e disponivel para (re)start manual:
+#   docker compose exec openclaw-vibestack start-ollama
+if ! command -v ollama >/dev/null 2>&1; then
+  echo "[start-ollama] ollama nao instalado nesta imagem (INSTALL_OLLAMA=false). Nada a fazer."
+  exit 0
+fi
+if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+  echo "[start-ollama] ollama ja' esta' rodando (porta 11434)."
+  exit 0
+fi
+nohup ollama serve >/var/log/ollama.log 2>&1 &
+OLLAMA_PID=$!
+i=1
+while [ "$i" -le 30 ]; do
+  if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    echo "[start-ollama] ollama pronto (pid=$OLLAMA_PID, porta 11434)."
+    exit 0
+  fi
+  [ "$i" -eq 30 ] && echo "[start-ollama] AVISO: ollama nao respondeu em 30s (log: /var/log/ollama.log)."
+  i=$((i + 1))
+  sleep 1
+done

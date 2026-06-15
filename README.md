@@ -6,7 +6,7 @@ Stack Docker self-hosted de uma **agência de tráfego com IA**: o [OpenClaw](ht
 
 **O que você ganha rodando isso:**
 - Um gateway OpenClaw acessível em `http://127.0.0.1:18789` (direto no Mac/Windows; via tunnel SSH na VPS).
-- Ollama no mesmo container — modelos locais (`llama3.2:3b`, `qwen2.5:7b`, etc.) sem dependência de API paga.
+- Modelos locais no mesmo container — escolha **Ollama** e/ou **LM Studio** no instalador (`llama3.2:3b`, `qwen2.5:7b`, etc.) sem dependência de API paga.
 - 70 tools MCP pra Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, datasets/pixels, product sets/items/feeds, **custom audiences**, **lookalikes**, **duplicação de campanhas/adsets/ads**) — agente cria/edita/lê/duplica/segmenta direto. 60 via CLI oficial + 10 via Graph API direta (audience/copies, que a CLI não cobre).
 - **Canal de WhatsApp** (Evolution Go): o agente **recebe e responde** mensagens — inclusive interpreta **imagem e áudio** (se o modelo do agente for multimodal). Veja [WhatsApp (Evolution Go)](#whatsapp-evolution-go).
 - **Geração de mídia** para o Criativo: **Higgsfield** (CLI envelopado em MCP — imagem/vídeo/soul-id) e **AtlasCloud** (MCP oficial, hub de 300+ modelos). Veja [Geração de mídia & hub de modelos](#geração-de-mídia--hub-de-modelos).
@@ -36,7 +36,7 @@ Stack Docker self-hosted de uma **agência de tráfego com IA**: o [OpenClaw](ht
   - [Passo 13 — (Opcional) Habilitar subagentes](#passo-13--opcional-habilitar-subagentes)
   - [Passo 14 — (Opcional) Disparar cadeia de agentes via cron](#passo-14--opcional-disparar-cadeia-de-agentes-via-cron)
 - [Atualizar o projeto na VPS](#atualizar-o-projeto-na-vps)
-- [Baixar modelos no Ollama](#baixar-modelos-no-ollama)
+- [Backends de modelos locais (Ollama / LM Studio)](#backends-de-modelos-locais-ollama--lm-studio)
 - [Hermes Agent (alternativa ao OpenClaw)](#hermes-agent-alternativa-ao-openclaw)
 - [WhatsApp (Evolution Go)](#whatsapp-evolution-go)
 - [Geração de mídia & hub de modelos (Higgsfield + AtlasCloud)](#geração-de-mídia--hub-de-modelos)
@@ -48,16 +48,17 @@ Stack Docker self-hosted de uma **agência de tráfego com IA**: o [OpenClaw](ht
 
 ## Arquitetura em uma frase
 
-Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, **(c)** MCP servers compartilhados pelos agentes — middlewares Python (`meta-ads`, `media-editor`, `whatsapp`, `higgsfield`) + o MCP oficial `atlascloud` (npm), e **(d)** o **Hermes Agent** na 8642/9119 — alternativa ao OpenClaw com as mesmas tools. Ao lado, dois serviços irmãos no compose dão o canal de WhatsApp: **Evolution Go** (whatsmeow) na 8080 + **Postgres**. Tudo em **portas separadas**, coexistindo sem conflito.
+Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** o backend de modelos locais que você escolheu instalar — **Ollama** (11434) e/ou **LM Studio** (1234), iniciado automaticamente no boot, **(c)** MCP servers compartilhados pelos agentes — middlewares Python (`meta-ads`, `media-editor`, `whatsapp`, `higgsfield`) + o MCP oficial `atlascloud` (npm), e **(d)** o **Hermes Agent** na 8642/9119 — alternativa ao OpenClaw com as mesmas tools. Ao lado, dois serviços irmãos no compose dão o canal de WhatsApp: **Evolution Go** (whatsmeow) na 8080 + **Postgres**. Tudo em **portas separadas**, coexistindo sem conflito.
 
-| Serviço            | Porta (loopback) | Processo / serviço                  |
-|--------------------|------------------|-------------------------------------|
-| OpenClaw gateway   | 18789            | `openclaw gateway` (principal)      |
-| Ollama             | 11434            | `ollama serve`                      |
-| Hermes API server  | 8642             | `hermes gateway` (api_server)       |
-| Hermes dashboard   | 9119             | `hermes dashboard` (UI gestão/chat) |
-| Evolution Go       | 8080             | WhatsApp API (whatsmeow) — serviço  |
-| Postgres           | (interno)        | banco do Evolution Go               |
+| Serviço            | Porta (loopback) | Processo / serviço                       |
+|--------------------|------------------|------------------------------------------|
+| OpenClaw gateway   | 18789            | `openclaw gateway` (principal)           |
+| Ollama             | 11434            | `ollama serve` (se instalado; sobe no boot) |
+| LM Studio          | 1234             | `lms server` OpenAI-compat (se instalado; sobe no boot) |
+| Hermes API server  | 8642             | `hermes gateway` (api_server)            |
+| Hermes dashboard   | 9119             | `hermes dashboard` (UI gestão/chat)      |
+| Evolution Go       | 8080             | WhatsApp API (whatsmeow) — serviço       |
+| Postgres           | (interno)        | banco do Evolution Go                    |
 
 O entrypoint registra o MCP automaticamente no boot via `openclaw mcp set`, propagando `ACCESS_TOKEN`/`AD_ACCOUNT_ID` pro processo filho.
 
@@ -316,10 +317,10 @@ docker compose up -d
 docker compose logs -f openclaw-vibestack
 ```
 
-O build leva ~5-10min na primeira vez (pnpm install do openclaw + uv install da meta-ads + ollama). Espera o log estabilizar — você deve ver:
+O build leva ~5-10min na primeira vez (pnpm install do openclaw + uv install da meta-ads + backend de modelos local escolhido). Espera o log estabilizar — você deve ver (a linha do backend varia conforme o que você instalou):
 
 ```
-[entrypoint] ollama pronto (pid=NN)
+[start-ollama] ollama pronto (pid=NN, porta 11434)
 [entrypoint] mcp 'meta-ads' registrado
 ```
 
@@ -600,7 +601,19 @@ docker compose up -d
 
 ---
 
-## Baixar modelos no Ollama
+## Backends de modelos locais (Ollama / LM Studio)
+
+O `./install.sh` pergunta **qual backend instalar** dentro do container — **Ollama**, **LM Studio** ou **os dois**. Só o escolhido é baixado na imagem (build args `INSTALL_OLLAMA` / `INSTALL_LMSTUDIO` no `.env`). **O que for instalado sobe sozinho no boot** (o entrypoint detecta e inicia). Adicionar o outro depois = rodar o `./install.sh` de novo e refazer o `docker compose build`.
+
+Diagnóstico e (re)start manual (idempotentes):
+
+```bash
+docker compose exec openclaw-vibestack models-status
+docker compose exec openclaw-vibestack start-ollama
+docker compose exec openclaw-vibestack start-lmstudio
+```
+
+### Ollama
 
 ```bash
 docker compose exec openclaw-vibestack ollama pull llama3.2:3b
@@ -608,12 +621,26 @@ docker compose exec openclaw-vibestack ollama pull qwen2.5:7b
 docker compose exec openclaw-vibestack ollama list
 ```
 
-Modelos ficam em `/root/.ollama` no host (volume), persistem entre rebuilds.
-
-Sugestões por tamanho:
+Modelos ficam em `/root/.ollama` no host (volume), persistem entre rebuilds. Sugestões por tamanho:
 - **3GB RAM**: `llama3.2:3b`, `phi3:mini`
 - **8GB RAM**: `qwen2.5:7b`, `mistral:7b`
 - **16GB+**: `qwen2.5:14b`, `llama3.1:8b-instruct`
+
+### LM Studio
+
+Server OpenAI-compatível em `http://127.0.0.1:1234/v1`. Baixe (do Hugging Face) e carregue um modelo:
+
+```bash
+docker compose exec openclaw-vibestack lms get qwen2.5-7b-instruct
+docker compose exec openclaw-vibestack lms load qwen2.5-7b-instruct --yes
+docker compose exec openclaw-vibestack lms ls
+```
+
+Modelos ficam em `/root/.lmstudio/models` no host (volume `LMSTUDIO_DATA_DIR`), persistem entre rebuilds.
+
+**Wirar como provider dos agentes:**
+- **OpenClaw** — adicione o bloco `lmstudio` em `models.providers` no `openclaw.json` (base URL `http://127.0.0.1:1234/v1`, `api: openai`, `apiKey: lm-studio`), trocando o `id`/`name` do modelo pelo que `lms ls` mostrar. (Há um exemplo pronto comentado no `openclaw.json` da raiz.)
+- **Hermes** — `docker compose exec -it openclaw-vibestack hermes model` e aponte a base URL `http://127.0.0.1:1234/v1`.
 
 ---
 

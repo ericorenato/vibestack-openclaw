@@ -36,14 +36,45 @@ RUN uv venv --python 3.12 /opt/middleware-venv \
 
 ENV PATH=/root/.local/bin:$PATH
 
-# Ollama — instalado dentro da imagem (mesmo padrao de um desktop linux).
-# O script oficial baixa o binario, instala em /usr/local/bin/ollama e tenta
-# criar servico systemd (passo ignorado em container, nao falha).
-RUN curl -fsSL https://ollama.com/install.sh | sh
+# ============================================================
+# Backends de modelos locais — Ollama e/ou LM Studio.
+# O ./install.sh pergunta qual instalar e grava INSTALL_OLLAMA / INSTALL_LMSTUDIO
+# no .env; o compose passa como build args. Baixa-se APENAS o(s) escolhido(s).
+# O que for instalado SOBE no boot (o entrypoint detecta via `command -v`).
+# Adicionar o outro depois = novo `docker compose build`.
+# ============================================================
+ARG INSTALL_OLLAMA=true
+ARG INSTALL_LMSTUDIO=false
 
-# Pasta persistente dos modelos — montada como volume pelo compose.
+# Ollama (condicional). O script oficial baixa o binario, instala em
+# /usr/local/bin/ollama e tenta criar servico systemd (ignorado em container).
+RUN if [ "$INSTALL_OLLAMA" = "true" ]; then \
+      curl -fsSL https://ollama.com/install.sh | sh; \
+    else \
+      echo "[build] INSTALL_OLLAMA=$INSTALL_OLLAMA -> pulando Ollama"; \
+    fi
+
+# Pasta persistente dos modelos do Ollama — montada como volume pelo compose.
 ENV OLLAMA_MODELS=/var/lib/ollama
 RUN mkdir -p /var/lib/ollama
+
+# LM Studio headless (condicional) — engine 'llmster' + CLI 'lms', instalado em
+# /root/.lmstudio/bin (instalador nao-interativo, sem GUI). Alias 'lms' no PATH.
+# Modelos em /root/.lmstudio/models (montado como volume pelo compose, igual ao
+# Ollama). Auth nao e' necessaria p/ modelos publicos (lms get). Sobe no boot.
+RUN if [ "$INSTALL_LMSTUDIO" = "true" ]; then \
+      curl -fsSL https://lmstudio.ai/install.sh | bash \
+      && ln -sf /root/.lmstudio/bin/lms /usr/local/bin/lms \
+      && mkdir -p /root/.lmstudio/models; \
+    else \
+      echo "[build] INSTALL_LMSTUDIO=$INSTALL_LMSTUDIO -> pulando LM Studio"; \
+    fi
+
+# Helpers de (re)start e diagnostico dos backends locais. Usados pelo entrypoint
+# no boot (sobe o que estiver instalado) e disponiveis para uso manual via
+# `docker compose exec`. Idempotentes; cada um checa se o engine existe.
+COPY scripts/start-ollama scripts/start-lmstudio scripts/models-status /usr/local/bin/
+RUN chmod +x /usr/local/bin/start-ollama /usr/local/bin/start-lmstudio /usr/local/bin/models-status
 
 # ============================================================
 # >>> BINÁRIOS CUSTOMIZADOS — adicione aqui suas dependências <<<

@@ -1,0 +1,29 @@
+#!/bin/sh
+# Sobe o LM Studio headless: daemon 'llmster' + server OpenAI-compat na porta 1234.
+# Idempotente. Chamado pelo entrypoint no boot quando o LM Studio esta' instalado,
+# e disponivel para (re)start manual:
+#   docker compose exec openclaw-vibestack start-lmstudio
+if ! command -v lms >/dev/null 2>&1; then
+  echo "[start-lmstudio] lms nao instalado nesta imagem (INSTALL_LMSTUDIO=false). Nada a fazer."
+  exit 0
+fi
+if curl -sf http://127.0.0.1:1234/v1/models >/dev/null 2>&1; then
+  echo "[start-lmstudio] LM Studio server ja' esta' rodando (porta 1234)."
+  exit 0
+fi
+# O CLI lê estado/modelos de ~/.lmstudio -> HOME explicito (entrypoint/exec com env reduzido).
+export HOME="${HOME:-/root}"
+# daemon up: sobe o engine llmster (detached). server start --host 0.0.0.0: necessario
+# para o proxy do Docker alcancar a porta (publicada em loopback no host).
+lms daemon up >/var/log/lmstudio.log 2>&1 || true
+lms server start --port 1234 --host 0.0.0.0 >>/var/log/lmstudio.log 2>&1 || true
+i=1
+while [ "$i" -le 30 ]; do
+  if curl -sf http://127.0.0.1:1234/v1/models >/dev/null 2>&1; then
+    echo "[start-lmstudio] LM Studio pronto (porta 1234, API OpenAI-compat em /v1)."
+    exit 0
+  fi
+  [ "$i" -eq 30 ] && echo "[start-lmstudio] AVISO: server nao respondeu em 30s (log: /var/log/lmstudio.log)."
+  i=$((i + 1))
+  sleep 1
+done

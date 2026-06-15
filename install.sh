@@ -263,12 +263,14 @@ OPENCLAW_DATA_DIR_VAL="${HOME_ENV}/.openclaw"
 OLLAMA_DATA_DIR_VAL="${HOME_ENV}/.ollama"
 HERMES_DATA_DIR_VAL="${HOME_ENV}/.hermes"
 HIGGSFIELD_DATA_DIR_VAL="${HOME_ENV}/.higgsfield"
+LMSTUDIO_DATA_DIR_VAL="${HOME_ENV}/.lmstudio"
 EVOLUTION_DATA_DIR_VAL="${HOME_ENV}/.evolution-go"
 POSTGRES_DATA_DIR_VAL="${HOME_ENV}/.evogo-pg"
 info "OpenClaw data -> $OPENCLAW_DATA_DIR_VAL"
 info "Ollama data   -> $OLLAMA_DATA_DIR_VAL"
 info "Hermes data   -> $HERMES_DATA_DIR_VAL"
 info "Higgsfield    -> $HIGGSFIELD_DATA_DIR_VAL"
+info "LM Studio data-> $LMSTUDIO_DATA_DIR_VAL"
 info "Evolution data-> $EVOLUTION_DATA_DIR_VAL"
 info "Postgres data -> $POSTGRES_DATA_DIR_VAL"
 
@@ -276,7 +278,7 @@ info "Postgres data -> $POSTGRES_DATA_DIR_VAL"
 # Detecta diretorios de dados ja' existentes (config, modelos do Ollama,
 # sessoes, bancos). Reaproveitar mantem tudo; "do zero" APAGA esses diretorios.
 EXISTING_DIRS=""
-for d in .openclaw .ollama .hermes .higgsfield .evolution-go .evogo-pg; do
+for d in .openclaw .ollama .hermes .higgsfield .lmstudio .evolution-go .evogo-pg; do
   [ -d "${HOME_BASH}/${d}" ] && EXISTING_DIRS="${EXISTING_DIRS} ${HOME_BASH}/${d}"
 done
 if [ -n "$EXISTING_DIRS" ]; then
@@ -382,11 +384,11 @@ else
 fi
 
 # data dirs: sobrescreve apenas se vazio ou se ainda for o default da VPS.
-for pair in "OPENCLAW_DATA_DIR=$OPENCLAW_DATA_DIR_VAL" "OLLAMA_DATA_DIR=$OLLAMA_DATA_DIR_VAL" "HERMES_DATA_DIR=$HERMES_DATA_DIR_VAL" "HIGGSFIELD_DATA_DIR=$HIGGSFIELD_DATA_DIR_VAL" "EVOLUTION_DATA_DIR=$EVOLUTION_DATA_DIR_VAL" "POSTGRES_DATA_DIR=$POSTGRES_DATA_DIR_VAL"; do
+for pair in "OPENCLAW_DATA_DIR=$OPENCLAW_DATA_DIR_VAL" "OLLAMA_DATA_DIR=$OLLAMA_DATA_DIR_VAL" "HERMES_DATA_DIR=$HERMES_DATA_DIR_VAL" "HIGGSFIELD_DATA_DIR=$HIGGSFIELD_DATA_DIR_VAL" "LMSTUDIO_DATA_DIR=$LMSTUDIO_DATA_DIR_VAL" "EVOLUTION_DATA_DIR=$EVOLUTION_DATA_DIR_VAL" "POSTGRES_DATA_DIR=$POSTGRES_DATA_DIR_VAL"; do
   key="${pair%%=*}"; target="${pair#*=}"
   cur="$(get_env_var .env "$key")"
   case "$cur" in
-    ""|"/root/.openclaw"|"/root/.ollama"|"/root/.hermes"|"/root/.higgsfield"|"/root/.evolution-go"|"/root/.evogo-pg")
+    ""|"/root/.openclaw"|"/root/.ollama"|"/root/.hermes"|"/root/.higgsfield"|"/root/.lmstudio"|"/root/.evolution-go"|"/root/.evogo-pg")
       set_env_var .env "$key" "$target"
       info "$key definido como $target"
       ;;
@@ -404,6 +406,32 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
 
   port="$(ask 'Porta do gateway OpenClaw' "$(get_env_var .env OPENCLAW_GATEWAY_PORT)")"
   set_env_var .env OPENCLAW_GATEWAY_PORT "$port"
+
+  # Backends de modelos locais (Ollama / LM Studio). Sao build args: instala-se
+  # SO' o escolhido, e o que for instalado SOBE no boot. Idempotente: o default
+  # do menu reflete o que ja' esta no .env (Enter mantem). Adicionar o outro
+  # depois exige novo `docker compose build`.
+  cur_ol="$(get_env_var .env INSTALL_OLLAMA)";  [ -z "$cur_ol" ] && cur_ol='true'
+  cur_lm="$(get_env_var .env INSTALL_LMSTUDIO)"; [ -z "$cur_lm" ] && cur_lm='false'
+  if [ "$cur_ol" = "true" ] && [ "$cur_lm" = "true" ]; then
+    info 'Backends locais: Ollama + LM Studio ja marcados para instalar (nada a adicionar).'
+  else
+    bk_def='1'
+    [ "$cur_lm" = "true" ] && bk_def='2'
+    printf '  Backend(s) de modelos locais a instalar no container:\n' >/dev/tty
+    printf '    1) Ollama\n' >/dev/tty
+    printf '    2) LM Studio (CLI lms + server OpenAI-compat na 1234)\n' >/dev/tty
+    printf '    3) Ambos\n' >/dev/tty
+    bk_choice="$(ask 'Qual instalar? (1/2/3)' "$bk_def")"
+    case "$bk_choice" in
+      2) set_env_var .env INSTALL_OLLAMA false; set_env_var .env INSTALL_LMSTUDIO true
+         info 'Marcado: LM Studio.' ;;
+      3) set_env_var .env INSTALL_OLLAMA true;  set_env_var .env INSTALL_LMSTUDIO true
+         info 'Marcado: Ollama + LM Studio.' ;;
+      *) set_env_var .env INSTALL_OLLAMA true;  set_env_var .env INSTALL_LMSTUDIO false
+         info 'Marcado: Ollama.' ;;
+    esac
+  fi
 
   meta_default='n'; [ -n "$(get_env_var .env META_ACCESS_TOKEN)" ] && meta_default='y'
   if ask_yesno 'Vai usar o MCP de Meta Ads (campanhas/insights)?' "$meta_default"; then
@@ -557,8 +585,8 @@ fi
 
 # --- 7. criar diretorios de dados ------------------------------------------
 step "Criando diretorios de dados"
-mkdir -p "${HOME_BASH}/.openclaw" "${HOME_BASH}/.ollama" "${HOME_BASH}/.hermes" "${HOME_BASH}/.higgsfield" "${HOME_BASH}/.evolution-go" "${HOME_BASH}/.evogo-pg"
-info "OK: .openclaw, .ollama, .hermes, .higgsfield, .evolution-go, .evogo-pg (em ${HOME_BASH})"
+mkdir -p "${HOME_BASH}/.openclaw" "${HOME_BASH}/.ollama" "${HOME_BASH}/.hermes" "${HOME_BASH}/.higgsfield" "${HOME_BASH}/.lmstudio" "${HOME_BASH}/.evolution-go" "${HOME_BASH}/.evogo-pg"
+info "OK: .openclaw, .ollama, .hermes, .higgsfield, .lmstudio, .evolution-go, .evogo-pg (em ${HOME_BASH})"
 
 # --- 8. build --------------------------------------------------------------
 step "Build da imagem (docker compose build)"
@@ -575,6 +603,14 @@ Proximos passos (manuais):
 
   1) Suba o container (a partir de $(pwd)):
        docker compose up -d
+     Backend(s) de modelos locais escolhido(s): Ollama=$(get_env_var .env INSTALL_OLLAMA), LM Studio=$(get_env_var .env INSTALL_LMSTUDIO).
+     O que foi instalado SOBE sozinho no boot. Diagnostico e (re)start manual:
+       docker compose exec openclaw-vibestack models-status
+       docker compose exec openclaw-vibestack start-ollama     # ou start-lmstudio
+     LM Studio — baixar/carregar um modelo e conferir:
+       docker compose exec openclaw-vibestack lms get <modelo>
+       docker compose exec openclaw-vibestack lms load <modelo> --yes
+     (Adicionar o outro backend depois exige rodar ./install.sh de novo + novo build.)
 
   2) Configure o OpenClaw (uma vez por host, interativo):
        docker compose exec openclaw-vibestack openclaw configure
@@ -640,6 +676,7 @@ Dados persistentes:
   ${OLLAMA_DATA_DIR_VAL}
   ${HERMES_DATA_DIR_VAL}
   ${HIGGSFIELD_DATA_DIR_VAL}
+  ${LMSTUDIO_DATA_DIR_VAL}
   ${EVOLUTION_DATA_DIR_VAL}
   ${POSTGRES_DATA_DIR_VAL}
 
