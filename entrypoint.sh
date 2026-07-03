@@ -49,6 +49,14 @@ esac
 
 register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/meta_ads_cli_mcp.py\"],\"env\":{\"ACCESS_TOKEN\":\"${ACCESS_TOKEN:-}\",\"AD_ACCOUNT_ID\":\"${AD_ACCOUNT_ID:-}\",\"BUSINESS_ID\":\"${BUSINESS_ID:-}\"}}"
 
+# Google Ads: MCP sobre o SDK oficial (google-ads). Auth OAuth2 lida pelo
+# load_from_env() -> repassamos as GOOGLE_ADS_* explicitamente (env reduzido no
+# spawn do child). Sem refresh_token as tools devolvem erro (nao derruba o boot).
+if [ -z "${GOOGLE_ADS_DEVELOPER_TOKEN:-}" ] || [ -z "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]; then
+  echo "[entrypoint] AVISO: GOOGLE_ADS_DEVELOPER_TOKEN/REFRESH_TOKEN vazio — google-ads MCP vai falhar auth. Rode 'google-ads-auth' e preencha o .env."
+fi
+register_mcp google-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/google_ads_cli_mcp.py\"],\"env\":{\"GOOGLE_ADS_DEVELOPER_TOKEN\":\"${GOOGLE_ADS_DEVELOPER_TOKEN:-}\",\"GOOGLE_ADS_CLIENT_ID\":\"${GOOGLE_ADS_CLIENT_ID:-}\",\"GOOGLE_ADS_CLIENT_SECRET\":\"${GOOGLE_ADS_CLIENT_SECRET:-}\",\"GOOGLE_ADS_REFRESH_TOKEN\":\"${GOOGLE_ADS_REFRESH_TOKEN:-}\",\"GOOGLE_ADS_LOGIN_CUSTOMER_ID\":\"${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}\",\"GOOGLE_ADS_CUSTOMER_ID\":\"${GOOGLE_ADS_CUSTOMER_ID:-}\",\"GOOGLE_ADS_USE_PROTO_PLUS\":\"True\"}}"
+
 # media-editor: ffmpeg envelopado em tools + Backblaze B2 (S3-compatible) como
 # storage canonico de seeds e derivacoes. Consumido pelo agente Criativo.
 if [ -z "${B2_BUCKET:-}" ] || [ -z "${B2_KEY_ID:-}" ] || [ -z "${B2_APP_KEY:-}" ]; then
@@ -106,6 +114,12 @@ HERMES_HOME="$HERMES_HOME" \
 ACCESS_TOKEN="${ACCESS_TOKEN:-}" \
 AD_ACCOUNT_ID="${AD_ACCOUNT_ID:-}" \
 BUSINESS_ID="${BUSINESS_ID:-}" \
+GOOGLE_ADS_DEVELOPER_TOKEN="${GOOGLE_ADS_DEVELOPER_TOKEN:-}" \
+GOOGLE_ADS_CLIENT_ID="${GOOGLE_ADS_CLIENT_ID:-}" \
+GOOGLE_ADS_CLIENT_SECRET="${GOOGLE_ADS_CLIENT_SECRET:-}" \
+GOOGLE_ADS_REFRESH_TOKEN="${GOOGLE_ADS_REFRESH_TOKEN:-}" \
+GOOGLE_ADS_LOGIN_CUSTOMER_ID="${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}" \
+GOOGLE_ADS_CUSTOMER_ID="${GOOGLE_ADS_CUSTOMER_ID:-}" \
 ATLASCLOUD_API_KEY="${ATLASCLOUD_API_KEY:-}" \
 B2_KEY_ID="${B2_KEY_ID:-}" \
 B2_APP_KEY="${B2_APP_KEY:-}" \
@@ -152,6 +166,19 @@ servers["meta-ads"] = {
         "ACCESS_TOKEN": os.environ.get("ACCESS_TOKEN", ""),
         "AD_ACCOUNT_ID": os.environ.get("AD_ACCOUNT_ID", ""),
         "BUSINESS_ID": os.environ.get("BUSINESS_ID", ""),
+    },
+}
+servers["google-ads"] = {
+    "command": PY,
+    "args": ["/app/middleware/google_ads_cli_mcp.py"],
+    "env": {
+        "GOOGLE_ADS_DEVELOPER_TOKEN": os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
+        "GOOGLE_ADS_CLIENT_ID": os.environ.get("GOOGLE_ADS_CLIENT_ID", ""),
+        "GOOGLE_ADS_CLIENT_SECRET": os.environ.get("GOOGLE_ADS_CLIENT_SECRET", ""),
+        "GOOGLE_ADS_REFRESH_TOKEN": os.environ.get("GOOGLE_ADS_REFRESH_TOKEN", ""),
+        "GOOGLE_ADS_LOGIN_CUSTOMER_ID": os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", ""),
+        "GOOGLE_ADS_CUSTOMER_ID": os.environ.get("GOOGLE_ADS_CUSTOMER_ID", ""),
+        "GOOGLE_ADS_USE_PROTO_PLUS": "True",
     },
 }
 servers["media-editor"] = {
@@ -204,7 +231,7 @@ try:
     cfg_path.chmod(0o600)
 except OSError:
     pass
-print(f"[entrypoint] hermes mcp 'meta-ads', 'media-editor' e 'whatsapp' registrados em {cfg_path}")
+print(f"[entrypoint] hermes mcp 'meta-ads', 'google-ads', 'media-editor' e 'whatsapp' registrados em {cfg_path}")
 PYEOF
 
 # Sobe o gateway do Hermes em background. A unica plataforma que sobe sem

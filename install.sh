@@ -444,6 +444,27 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
     info 'Meta Ads pulado — preencha META_ACCESS_TOKEN no .env depois se mudar de ideia.'
   fi
 
+  gads_default='n'; [ -n "$(get_env_var .env GOOGLE_ADS_DEVELOPER_TOKEN)" ] && gads_default='y'
+  if ask_yesno 'Vai usar o MCP de Google Ads (campanhas/insights)?' "$gads_default"; then
+    info 'Developer token: Google Ads -> Tools -> API Center (conta MCC).'
+    info 'OAuth client "Desktop app" no Google Cloud -> client_id + client_secret.'
+    gads_dev="$(ask 'GOOGLE_ADS_DEVELOPER_TOKEN' "$(get_env_var .env GOOGLE_ADS_DEVELOPER_TOKEN)")"
+    gads_cid="$(ask 'GOOGLE_ADS_CLIENT_ID' "$(get_env_var .env GOOGLE_ADS_CLIENT_ID)")"
+    gads_sec="$(ask 'GOOGLE_ADS_CLIENT_SECRET' "$(get_env_var .env GOOGLE_ADS_CLIENT_SECRET)")"
+    gads_ref="$(ask 'GOOGLE_ADS_REFRESH_TOKEN (vazio agora — gere depois com google-ads-auth)' "$(get_env_var .env GOOGLE_ADS_REFRESH_TOKEN)")"
+    gads_login="$(ask 'GOOGLE_ADS_LOGIN_CUSTOMER_ID (MCC, sem hifens — pode deixar vazio)' "$(get_env_var .env GOOGLE_ADS_LOGIN_CUSTOMER_ID)")"
+    gads_acc="$(ask 'GOOGLE_ADS_CUSTOMER_ID (conta operada, sem hifens)' "$(get_env_var .env GOOGLE_ADS_CUSTOMER_ID)")"
+    set_env_var .env GOOGLE_ADS_DEVELOPER_TOKEN "$gads_dev"
+    set_env_var .env GOOGLE_ADS_CLIENT_ID "$gads_cid"
+    set_env_var .env GOOGLE_ADS_CLIENT_SECRET "$gads_sec"
+    set_env_var .env GOOGLE_ADS_REFRESH_TOKEN "$gads_ref"
+    set_env_var .env GOOGLE_ADS_LOGIN_CUSTOMER_ID "$gads_login"
+    set_env_var .env GOOGLE_ADS_CUSTOMER_ID "$gads_acc"
+    [ -z "$gads_ref" ] && info 'Falta o refresh token: apos subir, rode `docker compose exec -it openclaw-vibestack google-ads-auth` e cole o GOOGLE_ADS_REFRESH_TOKEN no .env.'
+  else
+    info 'Google Ads pulado — preencha os GOOGLE_ADS_* no .env depois se mudar de ideia.'
+  fi
+
   atlas_default='n'; [ -n "$(get_env_var .env ATLASCLOUD_API_KEY)" ] && atlas_default='y'
   if ask_yesno 'Vai usar o AtlasCloud (hub de 300+ modelos img/video/LLM via MCP)?' "$atlas_default"; then
     info 'Pegue a API key em https://www.atlascloud.ai/console/api-keys'
@@ -634,7 +655,14 @@ Proximos passos (manuais):
          docker compose exec openclaw-vibestack higgsfield auth login
          docker compose exec openclaw-vibestack higgsfield auth status
 
-  6) (Opcional) WhatsApp via Evolution Go (servico na 8080):
+  6) (Opcional) Google Ads — MCP de campanhas/insights (SDK oficial).
+       Falta so' o refresh token OAuth. Gere UMA vez (fluxo headless: abre uma
+       URL, voce autoriza no navegador e cola a URL de retorno):
+         docker compose exec -it openclaw-vibestack google-ads-auth
+       Copie o GOOGLE_ADS_REFRESH_TOKEN impresso pro .env e rode:
+         docker compose up -d openclaw-vibestack
+
+  7) (Opcional) WhatsApp via Evolution Go (servico na 8080):
        a) Ative a licenca (uma vez) no Manager:
             Local: http://127.0.0.1:8080/manager/login   (API key = EVOLUTION_API_KEY)
             VPS:   ssh -N -L 8080:127.0.0.1:8080 root@SEU_VPS_IP

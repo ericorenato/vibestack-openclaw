@@ -31,8 +31,11 @@ RUN npm install -g atlascloud-mcp
 # Python SDK do MCP para os middlewares customizados (meta_ads_cli_mcp.py, media_editor_mcp.py).
 # Venv criado por uv vem sem pip — usamos `uv pip install` no venv ativo via VIRTUAL_ENV.
 # boto3 e' usado pelo media_editor_mcp.py como cliente S3-compatible do Backblaze B2.
+# google-ads = SDK oficial da Google Ads API (google_ads_cli_mcp.py); google-auth-oauthlib
+# = fluxo OAuth do helper google-ads-auth que gera o refresh_token.
 RUN uv venv --python 3.12 /opt/middleware-venv \
- && VIRTUAL_ENV=/opt/middleware-venv uv pip install --no-cache "mcp>=1.0" "boto3>=1.30"
+ && VIRTUAL_ENV=/opt/middleware-venv uv pip install --no-cache \
+      "mcp>=1.0" "boto3>=1.30" "google-ads>=25.0" "google-auth-oauthlib>=1.2"
 
 ENV PATH=/root/.local/bin:$PATH
 
@@ -80,6 +83,11 @@ RUN if [ "$INSTALL_LMSTUDIO" = "true" ]; then \
 # `docker compose exec`. Idempotentes; cada um checa se o engine existe.
 COPY scripts/start-ollama scripts/start-lmstudio scripts/models-status /usr/local/bin/
 RUN chmod +x /usr/local/bin/start-ollama /usr/local/bin/start-lmstudio /usr/local/bin/models-status
+
+# Helper de auth do Google Ads: gera o refresh_token OAuth (fluxo headless) via
+# `docker compose exec -it openclaw-vibestack google-ads-auth`.
+COPY scripts/google-ads-auth /usr/local/bin/google-ads-auth
+RUN chmod +x /usr/local/bin/google-ads-auth
 
 # ============================================================
 # >>> BINÁRIOS CUSTOMIZADOS — adicione aqui suas dependências <<<

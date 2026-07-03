@@ -1,0 +1,113 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2869
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Bold;\f1\froman\fcharset0 Times-Roman;\f2\froman\fcharset0 Times-Italic;
+}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat0\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid1\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid101\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid2}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}}
+\deftab720
+\pard\pardeftab720\sa321\partightenfactor0
+
+\f0\b\fs48 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Google Ads API Integration \'97 Design Document\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Company:
+\f1\b0  AutoNext Treinamento IA\uc0\u8232 
+\f0\b Website:
+\f1\b0  https://ericorenato.com.br\uc0\u8232 
+\f0\b API contact email:
+\f1\b0  ericoengcomp@gmail.com\uc0\u8232 
+\f0\b Manager account (MCC) ID:
+\f1\b0  959-190-4950\uc0\u8232 
+\f0\b Tool name:
+\f1\b0  Vibestack Ads Manager (internal)\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 1. Overview\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b0\fs24 \cf0 AutoNext Treinamento IA is a marketing/SEM agency and training company. We are building an internal tool that manages Google Ads campaigns through an AI-assisted operator workflow. The tool wraps the official Google Ads API Python client library (
+\f2\i google-ads
+\f1\i0 ) and exposes typed operations to our internal operators. It runs on our own self-hosted infrastructure (Docker) and operates only Google Ads accounts we own or manage under our manager account (MCC 959-190-4950).\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 2. Users and access\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b0\fs24 \cf0 Internal users only (agency staff). The tool is not offered to the general public and is not a SaaS product. Each operator instructs the tool in natural language; the tool translates the instruction into Google Ads API requests.\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 3. Authentication\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b0\fs24 \cf0 OAuth 2.0 using an installed/desktop application flow with an offline refresh token. The developer token belongs to our manager account. Requests set 
+\f2\i login-customer-id
+\f1\i0  to the MCC and a per-request 
+\f2\i customer-id
+\f1\i0  for the operated account. Credentials are stored as environment variables within our own infrastructure and are never exposed to end users.\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 4. Google Ads API services and methods used\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls1\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 CustomerService.ListAccessibleCustomers
+\f1\b0  \'97 discover accessible accounts.\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 GoogleAdsService.Search / SearchStream
+\f1\b0  (GAQL) \'97 read campaigns, ad groups, ads, keywords, budgets and performance metrics (impressions, clicks, cost, conversions, CTR, average CPC) and the search terms report.\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 CampaignBudgetService.MutateCampaignBudgets
+\f1\b0  \'97 create and update campaign budgets.\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 CampaignService.MutateCampaigns
+\f1\b0  \'97 create, update, pause, resume and remove campaigns.\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 AdGroupService.MutateAdGroups
+\f1\b0  \'97 create, update, pause and remove ad groups.\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 AdGroupAdService.MutateAdGroupAds
+\f1\b0  \'97 create, pause and remove Responsive Search Ads.\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 AdGroupCriterionService.MutateAdGroupCriteria
+\f1\b0  \'97 add, pause and remove keywords (positive and negative).\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 5. Typical flow\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\partightenfactor0
+\ls2\ilvl0
+\f1\b0\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 An operator issues an instruction (e.g. "create a paused search campaign with a R$50/day budget", or "report last 30 days performance by campaign").\
+\ls2\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 The tool builds the corresponding API request: a GAQL query for reads, or mutate operations for writes.\
+\ls2\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Write operations create entities in a PAUSED state by default to prevent accidental spend; the operator reviews and enables them explicitly.\
+\ls2\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Results are returned to the operator as structured data.\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 6. Rate and volume\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b0\fs24 \cf0 Expected volume is a few hundred operations per day, well within Basic access limits. Reads are done with GAQL; writes are batched per entity type where possible.\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 7. Data handling and privacy\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b0\fs24 \cf0 The tool does not collect end-user personally identifiable information. It reads and writes only campaign configuration and aggregate performance metrics. No user-list or customer-match uploads are performed. The tool is not used for the App Conversion Tracking and Remarketing API.\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 8. Compliance\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b0\fs24 \cf0 The tool respects Google Ads API Terms of Service and policies. The API contact email is kept up to date to receive notices from the API team.\
+}

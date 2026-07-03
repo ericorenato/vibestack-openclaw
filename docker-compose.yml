@@ -26,6 +26,16 @@ services:
       - ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      # Google Ads — SDK oficial (google_ads_cli_mcp.py) le as GOOGLE_ADS_* via
+      # load_from_env(). USE_PROTO_PLUS e' exigido pelo SDK. CUSTOMER_ID = conta
+      # operada por padrao (as tools aceitam customer_id p/ trocar de conta).
+      - GOOGLE_ADS_DEVELOPER_TOKEN=${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+      - GOOGLE_ADS_CLIENT_ID=${GOOGLE_ADS_CLIENT_ID:-}
+      - GOOGLE_ADS_CLIENT_SECRET=${GOOGLE_ADS_CLIENT_SECRET:-}
+      - GOOGLE_ADS_REFRESH_TOKEN=${GOOGLE_ADS_REFRESH_TOKEN:-}
+      - GOOGLE_ADS_LOGIN_CUSTOMER_ID=${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}
+      - GOOGLE_ADS_CUSTOMER_ID=${GOOGLE_ADS_CUSTOMER_ID:-}
+      - GOOGLE_ADS_USE_PROTO_PLUS=True
       # AtlasCloud — MCP oficial (hub de modelos). Auth so' por API key via env.
       - ATLASCLOUD_API_KEY=${ATLASCLOUD_API_KEY:-}
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

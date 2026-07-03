@@ -11,7 +11,7 @@ Stack Docker self-hosted de uma **agência de tráfego com IA**: o [OpenClaw](ht
 - **Canal de WhatsApp** (Evolution Go): o agente **recebe e responde** mensagens — inclusive interpreta **imagem e áudio** (se o modelo do agente for multimodal). Veja [WhatsApp (Evolution Go)](#whatsapp-evolution-go).
 - **Geração de mídia** para o Criativo: **Higgsfield** (CLI envelopado em MCP — imagem/vídeo/soul-id) e **AtlasCloud** (MCP oficial, hub de 300+ modelos). Veja [Geração de mídia & hub de modelos](#geração-de-mídia--hub-de-modelos).
 - Bloco demarcado no `Dockerfile` pra "bakear" suas próprias CLIs/binários (gog, goplaces, wacli já vêm de exemplo).
-- **Hermes Agent** (NousResearch) no mesmo container como alternativa ao OpenClaw — API OpenAI-compatible em `http://127.0.0.1:8642/v1`, com acesso aos **mesmos** MCP servers (meta-ads, media-editor, whatsapp, higgsfield, atlascloud). Veja [Hermes Agent](#hermes-agent-alternativa-ao-openclaw).
+- **Hermes Agent** (NousResearch) no mesmo container como alternativa ao OpenClaw — API OpenAI-compatible em `http://127.0.0.1:8642/v1`, com acesso aos **mesmos** MCP servers (meta-ads, google-ads, media-editor, whatsapp, higgsfield, atlascloud). Veja [Hermes Agent](#hermes-agent-alternativa-ao-openclaw).
 
 ---
 
@@ -48,7 +48,7 @@ Stack Docker self-hosted de uma **agência de tráfego com IA**: o [OpenClaw](ht
 
 ## Arquitetura em uma frase
 
-Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** o backend de modelos locais que você escolheu instalar — **Ollama** (11434) e/ou **LM Studio** (1234), iniciado automaticamente no boot, **(c)** MCP servers compartilhados pelos agentes — middlewares Python (`meta-ads`, `media-editor`, `whatsapp`, `higgsfield`) + o MCP oficial `atlascloud` (npm), e **(d)** o **Hermes Agent** na 8642/9119 — alternativa ao OpenClaw com as mesmas tools. Ao lado, dois serviços irmãos no compose dão o canal de WhatsApp: **Evolution Go** (whatsmeow) na 8080 + **Postgres**. Tudo em **portas separadas**, coexistindo sem conflito.
+Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** o backend de modelos locais que você escolheu instalar — **Ollama** (11434) e/ou **LM Studio** (1234), iniciado automaticamente no boot, **(c)** MCP servers compartilhados pelos agentes — middlewares Python (`meta-ads`, `google-ads`, `media-editor`, `whatsapp`, `higgsfield`) + o MCP oficial `atlascloud` (npm), e **(d)** o **Hermes Agent** na 8642/9119 — alternativa ao OpenClaw com as mesmas tools. Ao lado, dois serviços irmãos no compose dão o canal de WhatsApp: **Evolution Go** (whatsmeow) na 8080 + **Postgres**. Tudo em **portas separadas**, coexistindo sem conflito.
 
 | Serviço            | Porta (loopback) | Processo / serviço                       |
 |--------------------|------------------|------------------------------------------|
@@ -354,13 +354,14 @@ docker compose up -d --force-recreate openclaw-vibestack
 docker compose logs openclaw-vibestack | grep -iE "mcp|registrado"
 ```
 
-Espera ver os servers registrados — entre eles `[entrypoint] mcp 'meta-ads' registrado`, e também `media-editor`, `whatsapp`, `higgsfield` e `atlascloud`. Avisos comuns e o que fazer:
+Espera ver os servers registrados — entre eles `[entrypoint] mcp 'meta-ads' registrado`, e também `google-ads`, `media-editor`, `whatsapp`, `higgsfield` e `atlascloud`. Avisos comuns e o que fazer:
 
 - `AVISO: ACCESS_TOKEN vazio` → preencha `META_ACCESS_TOKEN` (Passo 6).
+- `AVISO: GOOGLE_ADS_DEVELOPER_TOKEN/REFRESH_TOKEN vazio` → preencha os `GOOGLE_ADS_*` no `.env` e gere o refresh token com `google-ads-auth` (veja [Google Ads (MCP)](#google-ads-mcp--auth-oauth2--developer-token)).
 - `AVISO: ATLASCLOUD_API_KEY vazio` → preencha `ATLASCLOUD_API_KEY` no `.env` (o MCP `atlascloud` sobe, mas falha auth até preencher).
 - Higgsfield: o MCP sobe sem credencial — a auth é por login (veja [Geração de mídia](#geração-de-mídia--hub-de-modelos)); confira com `docker compose exec openclaw-vibestack higgsfield auth status`.
 
-Pra listar tudo de uma vez (deve mostrar `meta-ads`, `media-editor`, `whatsapp`, `higgsfield` e `atlascloud`):
+Pra listar tudo de uma vez (deve mostrar `meta-ads`, `google-ads`, `media-editor`, `whatsapp`, `higgsfield` e `atlascloud`):
 
 ```bash
 docker compose exec openclaw-vibestack openclaw mcp list
@@ -747,7 +748,7 @@ config, providers, env e conversa com o agente na aba **Chat**. Logs:
 
 ### Confirmar as tools registradas
 
-Lista os MCP servers do Hermes (deve mostrar `meta-ads`, `media-editor`, `whatsapp`, `higgsfield`, `atlascloud`):
+Lista os MCP servers do Hermes (deve mostrar `meta-ads`, `google-ads`, `media-editor`, `whatsapp`, `higgsfield`, `atlascloud`):
 
 ```bash
 docker compose exec openclaw-vibestack hermes mcp list
@@ -889,6 +890,39 @@ Pronto — `atlascloud` aparece em `openclaw mcp list` (e no Hermes). Por que AP
 
 ---
 
+## Google Ads (MCP) — auth OAuth2 + developer token
+
+Ao contrário da Meta (que tem a CLI oficial `meta`), **o Google Ads não tem CLI oficial** equivalente. Então este MCP (`google_ads_cli_mcp.py`) fala direto com a Google Ads API pela **biblioteca cliente oficial** `google-ads`: leitura via GAQL, escrita via `mutate`. Dá ao agente ~30 tools read+write — campanhas, orçamentos, grupos de anúncios, anúncios RSA, palavras-chave e relatórios (`get_insights`, `gaql_search`, `search_terms_report`). Como no Meta, `create_*` sai **PAUSED** por padrão.
+
+A parte trabalhosa é a auth OAuth2. São 4 credenciais + 2 IDs de conta:
+
+1. **Developer token** — na conta **MCC (gerenciadora)** do Google Ads: *Tools & Settings → Setup → API Center*. Token novo vem em *test account access* (só opera contas de teste até a Google aprovar acesso básico/standard).
+2. **OAuth client** — no [Google Cloud Console](https://console.cloud.google.com/apis/credentials): crie um cliente do tipo **Desktop app** e anote `client_id` + `client_secret`. Habilite a "Google Ads API" no projeto.
+3. **Refresh token** — gere com o helper embutido (fluxo headless, sem navegador no container):
+   ```bash
+   docker compose exec -it openclaw-vibestack google-ads-auth
+   ```
+   Ele imprime uma URL; você abre no seu navegador, autoriza a conta, o navegador tenta abrir `http://localhost:8080/?code=...` e **falha (normal)** — copie a URL inteira da barra e cole de volta no terminal. O helper devolve o `GOOGLE_ADS_REFRESH_TOKEN`.
+4. **IDs de conta** — `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (a MCC, sem hífens; só se você opera contas de clientes via MCC) e `GOOGLE_ADS_CUSTOMER_ID` (a conta operada por padrão, sem hífens).
+
+Preencha tudo no `.env` (ou responda a pergunta do `install.sh`) e recrie o container:
+
+```bash
+docker compose up -d openclaw-vibestack
+```
+
+Pronto — `google-ads` aparece em `openclaw mcp list` (e no Hermes). Smoke test rápido:
+
+```bash
+# lista as contas acessíveis pelo refresh_token
+docker compose exec openclaw-vibestack /opt/middleware-venv/bin/python -c \
+  "import middleware.google_ads_cli_mcp as g; print(g.list_accessible_customers())"
+```
+
+Toda tool aceita `customer_id` (sem hífens) pra operar a conta de um cliente específico sem mexer no `.env` — útil pra agência com várias contas sob a MCC. Valores monetários são em **micros** internamente, mas as tools de orçamento/lance aceitam `*_units` na moeda da conta (ex.: `daily_budget_units=50.0`). Pra qualquer consulta sem tool dedicada, use `gaql_search(query)` com [GAQL](https://developers.google.com/google-ads/api/docs/query/overview).
+
+---
+
 ## Referência técnica
 
 ### Estrutura do repo
@@ -897,10 +931,12 @@ Pronto — `atlascloud` aparece em `openclaw mcp list` (e no Hermes). Por que AP
 .
 ├── Dockerfile               # node:24 + openclaw + ollama + meta-ads CLI + middleware + hermes
 ├── entrypoint.sh            # sobe backend(s) local(is) instalado(s) + openclaw mcp set + hermes gateway/dashboard + exec CMD
-├── scripts/                 # start-ollama / start-lmstudio / models-status (boot + uso manual)
+├── scripts/                 # start-ollama / start-lmstudio / models-status / google-ads-auth (boot + uso manual)
 ├── docker-compose.yml       # openclaw-vibestack + evolution-go + postgres (env, volumes, portas)
 ├── middleware/
 │   ├── meta_ads_cli_mcp.py        # MCP — 70 tools Meta Ads (CLI + Graph API)
+│   ├── google_ads_cli_mcp.py      # MCP — ~30 tools Google Ads (SDK oficial: GAQL + mutate)
+│   ├── google_ads_auth.py         # helper OAuth headless: gera o refresh_token
 │   ├── media_editor_mcp.py        # MCP — ffmpeg + Backblaze B2
 │   ├── higgsfield_cli_mcp.py      # MCP — Higgsfield CLI (geração imagem/vídeo, soul-id)
 │   ├── whatsapp_evolution_mcp.py  # MCP — envio WhatsApp via Evolution Go (whatsmeow)
@@ -919,6 +955,7 @@ O `entrypoint.sh` registra estes MCP servers no boot (no OpenClaw via `openclaw 
 | MCP server   | O que dá ao agente                                                   | Como é instalado                                                        | Auth (no `.env`)                          | Documentação |
 |--------------|----------------------------------------------------------------------|-------------------------------------------------------------------------|-------------------------------------------|--------------|
 | `meta-ads`   | 70 tools de Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, pixels, custom audiences, lookalikes, duplicação) | middleware Python (`meta_ads_cli_mcp.py`) envelopando a CLI oficial `meta` | `META_ACCESS_TOKEN` (+ `META_AD_ACCOUNT_ID`) | [Tools do MCP Meta Ads](#tools-do-mcp-meta-ads) |
+| `google-ads` | ~30 tools de Google Ads (campanhas, orçamentos, grupos, anúncios RSA, palavras-chave, insights/GAQL) — cria/edita/pausa/lê | middleware Python (`google_ads_cli_mcp.py`) sobre o **SDK oficial** `google-ads` (não há CLI oficial) | `GOOGLE_ADS_DEVELOPER_TOKEN` / `CLIENT_ID` / `CLIENT_SECRET` / `REFRESH_TOKEN` (+ `LOGIN_CUSTOMER_ID` / `CUSTOMER_ID`) | [Google Ads (MCP)](#google-ads-mcp--auth-oauth2--developer-token) |
 | `media-editor` | Edição de mídia com **ffmpeg** (cortar, redimensionar, overlay, trilha, validar p/ Meta) + **Backblaze B2** como storage de seeds/derivações | middleware Python (`media_editor_mcp.py`) + `ffmpeg` na imagem            | `B2_KEY_ID` / `B2_APP_KEY` / `B2_BUCKET` / `B2_ENDPOINT_URL` | [Tools do MCP media-editor](#tools-do-mcp-media-editor-ffmpeg--backblaze-b2) |
 | `whatsapp`   | Enviar texto/mídia e gerir a instância (QR/status) via Evolution Go  | middleware Python (`whatsapp_evolution_mcp.py`)                          | `EVOLUTION_API_KEY` / `EVOLUTION_INSTANCE_TOKEN` | [WhatsApp (Evolution Go)](#whatsapp-evolution-go) |
 | `higgsfield` | Gerar **imagem/vídeo** e treinar **soul-id** (rosto fiel)            | middleware Python (`higgsfield_cli_mcp.py`) envelopando o CLI `@higgsfield/cli` (instalado na imagem) | login no navegador 1x (token em volume `${HIGGSFIELD_DATA_DIR}`) | [Geração de mídia](#geração-de-mídia--hub-de-modelos) |
