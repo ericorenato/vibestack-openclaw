@@ -460,7 +460,7 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
     set_env_var .env GOOGLE_ADS_REFRESH_TOKEN "$gads_ref"
     set_env_var .env GOOGLE_ADS_LOGIN_CUSTOMER_ID "$gads_login"
     set_env_var .env GOOGLE_ADS_CUSTOMER_ID "$gads_acc"
-    [ -z "$gads_ref" ] && info 'Falta o refresh token: apos subir, rode `docker compose exec -it openclaw-vibestack google-ads-auth` e cole o GOOGLE_ADS_REFRESH_TOKEN no .env.'
+    [ -z "$gads_ref" ] && info 'Falta o refresh token: apos subir, rode `docker compose exec -it openclaw-vibestack googleads auth` e cole o GOOGLE_ADS_REFRESH_TOKEN no .env.'
   else
     info 'Google Ads pulado — preencha os GOOGLE_ADS_* no .env depois se mudar de ideia.'
   fi
@@ -658,9 +658,12 @@ Proximos passos (manuais):
   6) (Opcional) Google Ads — MCP de campanhas/insights (SDK oficial).
        Falta so' o refresh token OAuth. Gere UMA vez (fluxo headless: abre uma
        URL, voce autoriza no navegador e cola a URL de retorno):
-         docker compose exec -it openclaw-vibestack google-ads-auth
+         docker compose exec -it openclaw-vibestack googleads auth
        Copie o GOOGLE_ADS_REFRESH_TOKEN impresso pro .env e rode:
          docker compose up -d openclaw-vibestack
+       Depois, leia/gerencie pelo CLI (mesmo backend dos agentes):
+         docker compose exec openclaw-vibestack googleads campaigns
+         docker compose exec openclaw-vibestack googleads insights
 
   7) (Opcional) WhatsApp via Evolution Go (servico na 8080):
        a) Ative a licenca (uma vez) no Manager:

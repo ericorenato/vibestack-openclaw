@@ -84,10 +84,10 @@ RUN if [ "$INSTALL_LMSTUDIO" = "true" ]; then \
 COPY scripts/start-ollama scripts/start-lmstudio scripts/models-status /usr/local/bin/
 RUN chmod +x /usr/local/bin/start-ollama /usr/local/bin/start-lmstudio /usr/local/bin/models-status
 
-# Helper de auth do Google Ads: gera o refresh_token OAuth (fluxo headless) via
-# `docker compose exec -it openclaw-vibestack google-ads-auth`.
-COPY scripts/google-ads-auth /usr/local/bin/google-ads-auth
-RUN chmod +x /usr/local/bin/google-ads-auth
+# CLI `googleads`: auth (gera refresh_token) + leituras + escritas do Google Ads,
+# mesmo backend do MCP. Ex.: `docker compose exec -it openclaw-vibestack googleads auth`.
+COPY scripts/googleads /usr/local/bin/googleads
+RUN chmod +x /usr/local/bin/googleads
 
 # ============================================================
 # >>> BINÁRIOS CUSTOMIZADOS — adicione aqui suas dependências <<<

@@ -357,7 +357,7 @@ docker compose logs openclaw-vibestack | grep -iE "mcp|registrado"
 Espera ver os servers registrados — entre eles `[entrypoint] mcp 'meta-ads' registrado`, e também `google-ads`, `media-editor`, `whatsapp`, `higgsfield` e `atlascloud`. Avisos comuns e o que fazer:
 
 - `AVISO: ACCESS_TOKEN vazio` → preencha `META_ACCESS_TOKEN` (Passo 6).
-- `AVISO: GOOGLE_ADS_DEVELOPER_TOKEN/REFRESH_TOKEN vazio` → preencha os `GOOGLE_ADS_*` no `.env` e gere o refresh token com `google-ads-auth` (veja [Google Ads (MCP)](#google-ads-mcp--auth-oauth2--developer-token)).
+- `AVISO: GOOGLE_ADS_DEVELOPER_TOKEN/REFRESH_TOKEN vazio` → preencha os `GOOGLE_ADS_*` no `.env` e gere o refresh token com `googleads auth` (veja [Google Ads (MCP)](#google-ads-mcp--auth-oauth2--developer-token)).
 - `AVISO: ATLASCLOUD_API_KEY vazio` → preencha `ATLASCLOUD_API_KEY` no `.env` (o MCP `atlascloud` sobe, mas falha auth até preencher).
 - Higgsfield: o MCP sobe sem credencial — a auth é por login (veja [Geração de mídia](#geração-de-mídia--hub-de-modelos)); confira com `docker compose exec openclaw-vibestack higgsfield auth status`.
 
@@ -898,11 +898,11 @@ A parte trabalhosa é a auth OAuth2. São 4 credenciais + 2 IDs de conta:
 
 1. **Developer token** — na conta **MCC (gerenciadora)** do Google Ads: *Tools & Settings → Setup → API Center*. Token novo vem em *test account access* (só opera contas de teste até a Google aprovar acesso básico/standard).
 2. **OAuth client** — no [Google Cloud Console](https://console.cloud.google.com/apis/credentials): crie um cliente do tipo **Desktop app** e anote `client_id` + `client_secret`. Habilite a "Google Ads API" no projeto.
-3. **Refresh token** — gere com o helper embutido (fluxo headless, sem navegador no container):
+3. **Refresh token** — gere com o CLI `googleads` (fluxo headless, sem navegador no container):
    ```bash
-   docker compose exec -it openclaw-vibestack google-ads-auth
+   docker compose exec -it openclaw-vibestack googleads auth
    ```
-   Ele imprime uma URL; você abre no seu navegador, autoriza a conta, o navegador tenta abrir `http://localhost:8080/?code=...` e **falha (normal)** — copie a URL inteira da barra e cole de volta no terminal. O helper devolve o `GOOGLE_ADS_REFRESH_TOKEN`.
+   Ele imprime uma URL; você abre no seu navegador (logado na conta que administra o Google Ads), autoriza, o navegador tenta abrir `http://localhost:8080/?code=...` e **falha (normal)** — copie a URL inteira da barra e cole de volta no terminal. Devolve o `GOOGLE_ADS_REFRESH_TOKEN`.
 4. **IDs de conta** — `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (a MCC, sem hífens; só se você opera contas de clientes via MCC) e `GOOGLE_ADS_CUSTOMER_ID` (a conta operada por padrão, sem hífens).
 
 Preencha tudo no `.env` (ou responda a pergunta do `install.sh`) e recrie o container:
@@ -911,15 +911,34 @@ Preencha tudo no `.env` (ou responda a pergunta do `install.sh`) e recrie o cont
 docker compose up -d openclaw-vibestack
 ```
 
-Pronto — `google-ads` aparece em `openclaw mcp list` (e no Hermes). Smoke test rápido:
+Pronto — `google-ads` aparece em `openclaw mcp list` (e no Hermes). Passo a passo completo (criar MCC, vincular conta, developer token, Basic access, projeto no Google Cloud, OAuth): [`agency/exemplos/google-ads-setup-passo-a-passo.md`](agency/exemplos/google-ads-setup-passo-a-passo.md).
+
+### CLI `googleads` (auth + leituras + escritas)
+
+O mesmo backend do MCP é exposto como CLI de terminal — útil pra smoke test, aulas e automação por shell. `googleads` sozinho mostra a ajuda com todos os comandos.
 
 ```bash
-# lista as contas acessíveis pelo refresh_token
-docker compose exec openclaw-vibestack /opt/middleware-venv/bin/python -c \
-  "import middleware.google_ads_cli_mcp as g; print(g.list_accessible_customers())"
+# --- auth ---
+docker compose exec -it openclaw-vibestack googleads auth          # gera o refresh_token
+
+# --- leituras ---
+docker compose exec openclaw-vibestack googleads accounts          # contas acessíveis
+docker compose exec openclaw-vibestack googleads campaigns --limit 20
+docker compose exec openclaw-vibestack googleads insights --preset LAST_30_DAYS
+docker compose exec openclaw-vibestack googleads gaql "SELECT campaign.id, campaign.name FROM campaign LIMIT 10"
+# também: whoami, campaign <id>, budgets, ad-groups, ads, keywords, search-terms
+
+# --- escritas (liberam com o Basic access) ---
+docker compose exec openclaw-vibestack googleads create-campaign --name "Teste API" --daily 50   # nasce PAUSED
+docker compose exec openclaw-vibestack googleads pause-campaign 23207245140
+docker compose exec openclaw-vibestack googleads add-keywords --ad-group 123 --keyword "curso ia" --keyword "trafego pago" --match PHRASE
+# também: create-budget, update-campaign, resume/remove-campaign, create/pause/remove ad-group,
+#         create/pause/remove-ad, add-negative-keywords, pause/remove-keyword, update-budget/ad-group
 ```
 
-Toda tool aceita `customer_id` (sem hífens) pra operar a conta de um cliente específico sem mexer no `.env` — útil pra agência com várias contas sob a MCC. Valores monetários são em **micros** internamente, mas as tools de orçamento/lance aceitam `*_units` na moeda da conta (ex.: `daily_budget_units=50.0`). Pra qualquer consulta sem tool dedicada, use `gaql_search(query)` com [GAQL](https://developers.google.com/google-ads/api/docs/query/overview).
+Todo comando aceita `--customer-id <id>` (sem hífens) pra operar a conta de um cliente específico sem mexer no `.env` — útil pra agência com várias contas sob a MCC. Valores monetários (`--daily`, `--cpc`) são na **moeda da conta** (ex.: `--daily 50`), convertidos pra micros internamente. Saída sempre em JSON.
+
+O mesmo está disponível pros **agentes** (OpenClaw/Hermes) como tools MCP — ex.: peça *"liste minhas campanhas do Google Ads"* e o agente chama a tool sozinho.
 
 ---
 
@@ -931,12 +950,13 @@ Toda tool aceita `customer_id` (sem hífens) pra operar a conta de um cliente es
 .
 ├── Dockerfile               # node:24 + openclaw + ollama + meta-ads CLI + middleware + hermes
 ├── entrypoint.sh            # sobe backend(s) local(is) instalado(s) + openclaw mcp set + hermes gateway/dashboard + exec CMD
-├── scripts/                 # start-ollama / start-lmstudio / models-status / google-ads-auth (boot + uso manual)
+├── scripts/                 # start-ollama / start-lmstudio / models-status / googleads (boot + uso manual)
 ├── docker-compose.yml       # openclaw-vibestack + evolution-go + postgres (env, volumes, portas)
 ├── middleware/
 │   ├── meta_ads_cli_mcp.py        # MCP — 70 tools Meta Ads (CLI + Graph API)
 │   ├── google_ads_cli_mcp.py      # MCP — ~30 tools Google Ads (SDK oficial: GAQL + mutate)
-│   ├── google_ads_auth.py         # helper OAuth headless: gera o refresh_token
+│   ├── googleads_cli.py           # CLI 'googleads' (auth + leituras + escritas), mesmo backend
+│   ├── google_ads_auth.py         # fluxo OAuth headless usado por 'googleads auth'
 │   ├── media_editor_mcp.py        # MCP — ffmpeg + Backblaze B2
 │   ├── higgsfield_cli_mcp.py      # MCP — Higgsfield CLI (geração imagem/vídeo, soul-id)
 │   ├── whatsapp_evolution_mcp.py  # MCP — envio WhatsApp via Evolution Go (whatsmeow)

@@ -1,0 +1,8 @@
+#!/bin/sh
+# CLI `googleads` — auth + leituras + escritas do Google Ads, mesmo backend do MCP.
+# Uso:
+#   docker compose exec -it openclaw-vibestack googleads            # ajuda
+#   docker compose exec -it openclaw-vibestack googleads auth       # gera refresh_token
+#   docker compose exec openclaw-vibestack googleads campaigns
+#   docker compose exec openclaw-vibestack googleads gaql "SELECT campaign.id FROM campaign LIMIT 5"
+exec /opt/middleware-venv/bin/python /app/middleware/googleads_cli.py "$@"

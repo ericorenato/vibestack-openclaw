@@ -1,7 +1,0 @@
-#!/bin/sh
-# Gera um refresh_token OAuth do Google Ads (fluxo headless com colagem manual).
-# Roda o helper no venv do middleware, que tem o google-auth-oauthlib instalado.
-# Uso:
-#   docker compose exec -it openclaw-vibestack google-ads-auth
-# Precisa de GOOGLE_ADS_CLIENT_ID / GOOGLE_ADS_CLIENT_SECRET no ambiente (.env).
-exec /opt/middleware-venv/bin/python /app/middleware/google_ads_auth.py "$@"

@@ -53,7 +53,7 @@ register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\"
 # load_from_env() -> repassamos as GOOGLE_ADS_* explicitamente (env reduzido no
 # spawn do child). Sem refresh_token as tools devolvem erro (nao derruba o boot).
 if [ -z "${GOOGLE_ADS_DEVELOPER_TOKEN:-}" ] || [ -z "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]; then
-  echo "[entrypoint] AVISO: GOOGLE_ADS_DEVELOPER_TOKEN/REFRESH_TOKEN vazio — google-ads MCP vai falhar auth. Rode 'google-ads-auth' e preencha o .env."
+  echo "[entrypoint] AVISO: GOOGLE_ADS_DEVELOPER_TOKEN/REFRESH_TOKEN vazio — google-ads MCP vai falhar auth. Rode 'googleads auth' e preencha o .env."
 fi
 register_mcp google-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/google_ads_cli_mcp.py\"],\"env\":{\"GOOGLE_ADS_DEVELOPER_TOKEN\":\"${GOOGLE_ADS_DEVELOPER_TOKEN:-}\",\"GOOGLE_ADS_CLIENT_ID\":\"${GOOGLE_ADS_CLIENT_ID:-}\",\"GOOGLE_ADS_CLIENT_SECRET\":\"${GOOGLE_ADS_CLIENT_SECRET:-}\",\"GOOGLE_ADS_REFRESH_TOKEN\":\"${GOOGLE_ADS_REFRESH_TOKEN:-}\",\"GOOGLE_ADS_LOGIN_CUSTOMER_ID\":\"${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}\",\"GOOGLE_ADS_CUSTOMER_ID\":\"${GOOGLE_ADS_CUSTOMER_ID:-}\",\"GOOGLE_ADS_USE_PROTO_PLUS\":\"True\"}}"
 
