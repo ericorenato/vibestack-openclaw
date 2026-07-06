@@ -1039,5 +1039,72 @@ def search_terms_report(
     return _rows(q, customer_id)
 
 
+# ============================================================
+# Keyword Planner (ideias + volume de busca)
+# ============================================================
+
+@mcp.tool()
+def keyword_ideas(
+    seeds: list[str] | None = None,
+    url: str | None = None,
+    language_id: str = "1014",
+    location_ids: list[str] | None = None,
+    keyword_plan_network: str = "GOOGLE_SEARCH",
+    limit: int = 200,
+    customer_id: str | None = None,
+) -> Any:
+    """Pesquisa ideias de palavras-chave com VOLUME DE BUSCA (Keyword Planner).
+
+    Use `seeds` (termos semente) e/ou `url` (página de destino — o Google extrai
+    keywords do conteúdo). language_id: 1014=PT, 1000=EN. location_ids: ['2076']=Brasil.
+    keyword_plan_network: GOOGLE_SEARCH | GOOGLE_SEARCH_AND_PARTNERS.
+    Retorna, por ideia: texto, buscas mensais médias, concorrência (LOW/MEDIUM/HIGH)
+    e faixa de lance de topo (low/high, na moeda da conta). Ordenado por volume desc.
+    """
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    if not cid:
+        return {"error": "customer_id ausente"}
+    seeds = [s for s in (seeds or []) if s.strip()]
+    location_ids = location_ids or ["2076"]
+    if not seeds and not url:
+        return {"error": "informe seeds e/ou url"}
+    try:
+        svc = client.get_service("KeywordPlanIdeaService")
+        req = client.get_type("GenerateKeywordIdeasRequest")
+        req.customer_id = cid
+        req.language = f"languageConstants/{language_id}"
+        for loc in location_ids:
+            req.geo_target_constants.append(f"geoTargetConstants/{loc}")
+        req.keyword_plan_network = client.enums.KeywordPlanNetworkEnum[keyword_plan_network.upper()]
+        if seeds and url:
+            req.keyword_and_url_seed.url = url
+            req.keyword_and_url_seed.keywords.extend(seeds)
+        elif url:
+            req.url_seed.url = url
+        else:
+            req.keyword_seed.keywords.extend(seeds)
+        out = []
+        for idea in svc.generate_keyword_ideas(request=req):
+            m = idea.keyword_idea_metrics
+            out.append({
+                "text": idea.text,
+                "avg_monthly_searches": int(m.avg_monthly_searches or 0),
+                "competition": m.competition.name if m.competition else "UNKNOWN",
+                "competition_index": int(m.competition_index or 0),
+                "low_top_bid": round((m.low_top_of_page_bid_micros or 0) / 1_000_000, 2),
+                "high_top_bid": round((m.high_top_of_page_bid_micros or 0) / 1_000_000, 2),
+            })
+        out.sort(key=lambda x: x["avg_monthly_searches"], reverse=True)
+        return out[: int(limit)]
+    except Exception as e:  # noqa: BLE001
+        from google.ads.googleads.errors import GoogleAdsException  # type: ignore
+        if isinstance(e, GoogleAdsException):
+            return _gerr(e)
+        return {"error": str(e)}
+
+
 if __name__ == "__main__":
     mcp.run()

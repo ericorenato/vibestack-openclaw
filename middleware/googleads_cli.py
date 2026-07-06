@@ -102,6 +102,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("conversions", "[leitura] lista acoes de conversao")
 
+    sp = add("keyword-ideas", "[leitura] ideias de palavras-chave + volume (Keyword Planner)")
+    sp.add_argument("--seed", action="append", default=[], help="termo semente (repita)")
+    sp.add_argument("--url", help="pagina de destino p/ extrair keywords")
+    sp.add_argument("--language", default="1014", help="languageConstant id (1014=PT, 1000=EN)")
+    sp.add_argument("--location", action="append", default=[], help="geoTargetConstant id (2076=Brasil)")
+    sp.add_argument("--network", default="GOOGLE_SEARCH", choices=["GOOGLE_SEARCH", "GOOGLE_SEARCH_AND_PARTNERS"])
+    sp.add_argument("--limit", type=int, default=200)
+
     # ---- Escritas ---------------------------------------------------------
     sp = add("create-conversion", "[escrita] cria acao de conversao (ex.: compra Hotmart)")
     sp.add_argument("--name", required=True)
@@ -255,6 +263,10 @@ def dispatch(args) -> int:
         return _out(g.gaql_search(args.query, customer_id=cid))
     if cmd == "conversions":
         return _out(g.list_conversion_actions(customer_id=cid))
+    if cmd == "keyword-ideas":
+        return _out(g.keyword_ideas(seeds=args.seed, url=args.url, language_id=args.language,
+                                    location_ids=(args.location or None), keyword_plan_network=args.network,
+                                    limit=args.limit, customer_id=cid))
 
     # Escritas
     if cmd == "create-conversion":
