@@ -136,10 +136,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", help="YYYY-MM-DD")
     sp.add_argument("--end", help="YYYY-MM-DD")
 
-    sp = add("update-campaign", "[escrita] atualiza nome/status de campanha")
+    sp = add("update-campaign", "[escrita] atualiza nome/status/sufixo-URL de campanha")
     sp.add_argument("id")
     sp.add_argument("--name")
     sp.add_argument("--status", help="ENABLED|PAUSED|REMOVED")
+    sp.add_argument("--url-suffix", dest="url_suffix",
+                    help="sufixo UTM anexado a todas as URLs finais (ex.: 'utm_source=google&utm_campaign=autonext')")
 
     sp = add("pause-campaign", "[escrita] pausa campanha")
     sp.add_argument("id")
@@ -193,6 +195,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--path1")
     sp.add_argument("--path2")
     sp.add_argument("--status", default="PAUSED")
+
+    sp = add("update-ad", "[escrita] atualiza a URL final de um anuncio")
+    sp.add_argument("--ad", required=True, help="ad_id")
+    sp.add_argument("--url", required=True, help="nova final URL")
 
     sp = add("pause-ad", "[escrita] pausa anuncio")
     sp.add_argument("--ad-group", required=True)
@@ -285,7 +291,8 @@ def dispatch(args) -> int:
                                       status=args.status, start_date=args.start,
                                       end_date=args.end, customer_id=cid))
     if cmd == "update-campaign":
-        return _out(g.update_campaign(args.id, name=args.name, status=args.status, customer_id=cid))
+        return _out(g.update_campaign(args.id, name=args.name, status=args.status,
+                                      final_url_suffix=args.url_suffix, customer_id=cid))
     if cmd == "pause-campaign":
         return _out(g.pause_campaign(args.id, customer_id=cid))
     if cmd == "resume-campaign":
@@ -321,6 +328,8 @@ def dispatch(args) -> int:
                                 headlines=args.headline, descriptions=args.description,
                                 path1=args.path1, path2=args.path2,
                                 status=args.status, customer_id=cid))
+    if cmd == "update-ad":
+        return _out(g.update_ad(args.ad, args.url, customer_id=cid))
     if cmd == "pause-ad":
         return _out(g.pause_ad(args.ad_group, args.ad, customer_id=cid))
     if cmd == "resume-ad":

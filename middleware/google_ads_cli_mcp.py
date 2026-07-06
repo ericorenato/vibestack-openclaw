@@ -362,9 +362,16 @@ def update_campaign(
     campaign_id: str,
     name: str | None = None,
     status: str | None = None,
+    final_url_suffix: str | None = None,
     customer_id: str | None = None,
 ) -> Any:
-    """Atualiza nome e/ou status de uma campanha. status: ENABLED | PAUSED | REMOVED."""
+    """Atualiza nome, status e/ou o sufixo de URL final de uma campanha.
+
+    status: ENABLED | PAUSED | REMOVED.
+    final_url_suffix: parâmetros anexados a TODAS as URLs finais da campanha (ex.:
+    'utm_source=google&utm_medium=cpc&utm_campaign=autonext&utm_term={keyword}').
+    Aceita ValueTrack ({keyword}, {campaignid}, {adgroupid}, {creative}...).
+    """
     client = _client()
     if isinstance(client, dict):
         return client
@@ -381,6 +388,8 @@ def update_campaign(
             c.name = name
         if status is not None:
             c.status = client.enums.CampaignStatusEnum[status.upper()]
+        if final_url_suffix is not None:
+            c.final_url_suffix = final_url_suffix
         client.copy_from(op.update_mask, protobuf_helpers.field_mask(None, c._pb))
         return _mutate("CampaignService", "mutate_campaigns", [op], cid)
     except Exception as e:  # noqa: BLE001
@@ -776,6 +785,35 @@ def create_ad(
         if path2:
             rsa.path2 = path2
         return _mutate("AdGroupAdService", "mutate_ad_group_ads", [op], cid)
+    except Exception as e:  # noqa: BLE001
+        from google.ads.googleads.errors import GoogleAdsException  # type: ignore
+        if isinstance(e, GoogleAdsException):
+            return _gerr(e)
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def update_ad(ad_id: str, final_url: str, customer_id: str | None = None) -> Any:
+    """Atualiza a URL final (final_url) de um anúncio existente.
+
+    Obs.: em RSA os textos (headlines/descriptions) NÃO são editáveis via API —
+    para trocar textos, recrie o anúncio. A URL final é editável.
+    """
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    if not cid:
+        return {"error": "customer_id ausente"}
+    try:
+        from google.api_core import protobuf_helpers  # type: ignore
+        svc = client.get_service("AdService")
+        op = client.get_type("AdOperation")
+        ad = op.update
+        ad.resource_name = svc.ad_path(cid, ad_id)
+        ad.final_urls.append(final_url)
+        client.copy_from(op.update_mask, protobuf_helpers.field_mask(None, ad._pb))
+        return _mutate("AdService", "mutate_ads", [op], cid)
     except Exception as e:  # noqa: BLE001
         from google.ads.googleads.errors import GoogleAdsException  # type: ignore
         if isinstance(e, GoogleAdsException):
