@@ -496,6 +496,19 @@ def update_campaign_budget(
         return {"error": str(e)}
 
 
+@mcp.tool()
+def remove_campaign_budget(budget_id: str, customer_id: str | None = None) -> Any:
+    """Remove um orçamento. DESTRUTIVO. Só funciona se reference_count == 0
+    (nenhuma campanha usando); senão a API rejeita. Útil p/ limpar órfãos."""
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    op = client.get_type("CampaignBudgetOperation")
+    op.remove = client.get_service("CampaignBudgetService").campaign_budget_path(cid, budget_id)
+    return _mutate("CampaignBudgetService", "mutate_campaign_budgets", [op], cid)
+
+
 # ============================================================
 # Grupos de anúncios (Ad Groups)
 # ============================================================
@@ -592,6 +605,17 @@ def pause_ad_group(ad_group_id: str, customer_id: str | None = None) -> Any:
 
 
 @mcp.tool()
+def resume_ad_group(ad_group_id: str, customer_id: str | None = None) -> Any:
+    """Reativa grupo de anúncios (status -> ENABLED)."""
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    rn = client.get_service("AdGroupService").ad_group_path(cid, ad_group_id)
+    return _status_update("AdGroupOperation", "AdGroupService", "mutate_ad_groups", rn, "ENABLED", cid)
+
+
+@mcp.tool()
 def remove_ad_group(ad_group_id: str, customer_id: str | None = None) -> Any:
     """Remove grupo de anúncios. DESTRUTIVO."""
     client = _client()
@@ -685,6 +709,17 @@ def pause_ad(ad_group_id: str, ad_id: str, customer_id: str | None = None) -> An
 
 
 @mcp.tool()
+def resume_ad(ad_group_id: str, ad_id: str, customer_id: str | None = None) -> Any:
+    """Reativa anúncio (status -> ENABLED)."""
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    rn = client.get_service("AdGroupAdService").ad_group_ad_path(cid, ad_group_id, ad_id)
+    return _status_update("AdGroupAdOperation", "AdGroupAdService", "mutate_ad_group_ads", rn, "ENABLED", cid)
+
+
+@mcp.tool()
 def remove_ad(ad_group_id: str, ad_id: str, customer_id: str | None = None) -> Any:
     """Remove anúncio. DESTRUTIVO."""
     client = _client()
@@ -771,6 +806,18 @@ def pause_keyword(ad_group_id: str, criterion_id: str, customer_id: str | None =
     rn = client.get_service("AdGroupCriterionService").ad_group_criterion_path(cid, ad_group_id, criterion_id)
     return _status_update("AdGroupCriterionOperation", "AdGroupCriterionService",
                           "mutate_ad_group_criteria", rn, "PAUSED", cid)
+
+
+@mcp.tool()
+def resume_keyword(ad_group_id: str, criterion_id: str, customer_id: str | None = None) -> Any:
+    """Reativa uma palavra-chave (status -> ENABLED)."""
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    rn = client.get_service("AdGroupCriterionService").ad_group_criterion_path(cid, ad_group_id, criterion_id)
+    return _status_update("AdGroupCriterionOperation", "AdGroupCriterionService",
+                          "mutate_ad_group_criteria", rn, "ENABLED", cid)
 
 
 @mcp.tool()

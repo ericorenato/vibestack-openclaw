@@ -133,6 +133,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("id")
     sp.add_argument("--name")
     sp.add_argument("--daily", type=float, help="novo valor/dia na moeda da conta")
+    sp = add("remove-budget", "[escrita] remove orcamento (DESTRUTIVO; so se sem uso)")
+    sp.add_argument("id")
 
     sp = add("create-ad-group", "[escrita] cria grupo de anuncios (nasce PAUSED)")
     sp.add_argument("--campaign", required=True, help="campaign_id")
@@ -149,6 +151,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = add("pause-ad-group", "[escrita] pausa grupo de anuncios")
     sp.add_argument("id")
+    sp = add("resume-ad-group", "[escrita] reativa grupo de anuncios")
+    sp.add_argument("id")
     sp = add("remove-ad-group", "[escrita] remove grupo de anuncios (DESTRUTIVO)")
     sp.add_argument("id")
 
@@ -162,6 +166,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--status", default="PAUSED")
 
     sp = add("pause-ad", "[escrita] pausa anuncio")
+    sp.add_argument("--ad-group", required=True)
+    sp.add_argument("--ad", required=True)
+    sp = add("resume-ad", "[escrita] reativa anuncio")
     sp.add_argument("--ad-group", required=True)
     sp.add_argument("--ad", required=True)
     sp = add("remove-ad", "[escrita] remove anuncio (DESTRUTIVO)")
@@ -179,6 +186,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--match", default="BROAD", choices=["BROAD", "PHRASE", "EXACT"])
 
     sp = add("pause-keyword", "[escrita] pausa palavra-chave")
+    sp.add_argument("--ad-group", required=True)
+    sp.add_argument("--criterion", required=True)
+    sp = add("resume-keyword", "[escrita] reativa palavra-chave")
     sp.add_argument("--ad-group", required=True)
     sp.add_argument("--criterion", required=True)
     sp = add("remove-keyword", "[escrita] remove palavra-chave (DESTRUTIVO)")
@@ -245,6 +255,8 @@ def dispatch(args) -> int:
     if cmd == "update-budget":
         return _out(g.update_campaign_budget(args.id, name=args.name,
                                              daily_budget_units=args.daily, customer_id=cid))
+    if cmd == "remove-budget":
+        return _out(g.remove_campaign_budget(args.id, customer_id=cid))
     if cmd == "create-ad-group":
         return _out(g.create_ad_group(campaign_id=args.campaign, name=args.name,
                                       cpc_bid_units=args.cpc, status=args.status,
@@ -254,6 +266,8 @@ def dispatch(args) -> int:
                                       cpc_bid_units=args.cpc, customer_id=cid))
     if cmd == "pause-ad-group":
         return _out(g.pause_ad_group(args.id, customer_id=cid))
+    if cmd == "resume-ad-group":
+        return _out(g.resume_ad_group(args.id, customer_id=cid))
     if cmd == "remove-ad-group":
         return _out(g.remove_ad_group(args.id, customer_id=cid))
     if cmd == "create-ad":
@@ -263,6 +277,8 @@ def dispatch(args) -> int:
                                 status=args.status, customer_id=cid))
     if cmd == "pause-ad":
         return _out(g.pause_ad(args.ad_group, args.ad, customer_id=cid))
+    if cmd == "resume-ad":
+        return _out(g.resume_ad(args.ad_group, args.ad, customer_id=cid))
     if cmd == "remove-ad":
         return _out(g.remove_ad(args.ad_group, args.ad, customer_id=cid))
     if cmd == "add-keywords":
@@ -271,6 +287,8 @@ def dispatch(args) -> int:
         return _out(g.add_negative_keywords(args.ad_group, args.keyword, match_type=args.match, customer_id=cid))
     if cmd == "pause-keyword":
         return _out(g.pause_keyword(args.ad_group, args.criterion, customer_id=cid))
+    if cmd == "resume-keyword":
+        return _out(g.resume_keyword(args.ad_group, args.criterion, customer_id=cid))
     if cmd == "remove-keyword":
         return _out(g.remove_keyword(args.ad_group, args.criterion, customer_id=cid))
 
