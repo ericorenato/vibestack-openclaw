@@ -89,7 +89,19 @@ def _gerr(exc: Any) -> dict[str, Any]:
                         break
             except Exception:  # noqa: BLE001
                 pass
-            errors.append({"error_code": code, "message": err.message})
+            # field_path: qual campo causou o erro (ex.: operations[0].create.X).
+            field_path = ""
+            try:
+                parts = []
+                for el in err.location.field_path_elements:
+                    parts.append(el.field_name + (f"[{el.index}]" if el.index else ""))
+                field_path = ".".join(parts)
+            except Exception:  # noqa: BLE001
+                pass
+            item = {"error_code": code, "message": err.message}
+            if field_path:
+                item["field_path"] = field_path
+            errors.append(item)
     except Exception:  # noqa: BLE001
         errors.append({"message": str(exc)})
     req_id = getattr(exc, "request_id", None)
@@ -305,6 +317,21 @@ def create_campaign(
         c.name = name
         c.status = client.enums.CampaignStatusEnum[status.upper()]
         c.advertising_channel_type = client.enums.AdvertisingChannelTypeEnum[channel_type.upper()]
+        # network_settings é obrigatório: a API rejeita a criação sem ele
+        # (field_error=REQUIRED). Defaults sensatos por canal.
+        ch = channel_type.upper()
+        if ch == "SEARCH":
+            c.network_settings.target_google_search = True
+            c.network_settings.target_search_network = True
+            c.network_settings.target_content_network = False
+            c.network_settings.target_partner_search_network = False
+        elif ch == "DISPLAY":
+            c.network_settings.target_google_search = False
+            c.network_settings.target_search_network = False
+            c.network_settings.target_content_network = True
+            c.network_settings.target_partner_search_network = False
+        # Declaração obrigatória (API recente): publicidade política na UE.
+        c.contains_eu_political_advertising = client.enums.EuPoliticalAdvertisingStatusEnum.DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING
         c.campaign_budget = budget_resource_name
         # Estratégia de lance (oneof) — setar o sub-message ativa o oneof.
         bs = bidding_strategy.upper()
