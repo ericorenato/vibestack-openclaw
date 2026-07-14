@@ -16,5 +16,12 @@ node_modules/
 /agency/**/sandbox/
 /agency/**/.runtime/
 
+# Artefatos de criativo (imagens/vídeos gerados, seed do rosto, referências, validados)
+# usados/produzidos localmente pela gestão de ads — NÃO versionar (pesados + pessoais).
+/agency/gerado/
+/agency/seed/
+/agency/validado/
+/agency/referencia/
+
 # guia do curso Hermes — nao versionar
 /docs/curso-hermes.md
