@@ -413,25 +413,29 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
   # depois exige novo `docker compose build`.
   cur_ol="$(get_env_var .env INSTALL_OLLAMA)";  [ -z "$cur_ol" ] && cur_ol='true'
   cur_lm="$(get_env_var .env INSTALL_LMSTUDIO)"; [ -z "$cur_lm" ] && cur_lm='false'
-  if [ "$cur_ol" = "true" ] && [ "$cur_lm" = "true" ]; then
-    info 'Backends locais: Ollama + LM Studio ja marcados para instalar (nada a adicionar).'
-  else
-    bk_def='1'
-    [ "$cur_lm" = "true" ] && bk_def='2'
-    printf '  Backend(s) de modelos locais a instalar no container:\n' >/dev/tty
-    printf '    1) Ollama\n' >/dev/tty
-    printf '    2) LM Studio (CLI lms + server OpenAI-compat na 1234)\n' >/dev/tty
-    printf '    3) Ambos\n' >/dev/tty
-    bk_choice="$(ask 'Qual instalar? (1/2/3)' "$bk_def")"
-    case "$bk_choice" in
-      2) set_env_var .env INSTALL_OLLAMA false; set_env_var .env INSTALL_LMSTUDIO true
-         info 'Marcado: LM Studio.' ;;
-      3) set_env_var .env INSTALL_OLLAMA true;  set_env_var .env INSTALL_LMSTUDIO true
-         info 'Marcado: Ollama + LM Studio.' ;;
-      *) set_env_var .env INSTALL_OLLAMA true;  set_env_var .env INSTALL_LMSTUDIO false
-         info 'Marcado: Ollama.' ;;
-    esac
-  fi
+  # Default do menu reflete o estado atual do .env (Enter mantem). Ha' cenarios
+  # em que o usuario nao quer NENHUM backend local (usa so' modelos na nuvem):
+  # a opcao 4 desmarca os dois.
+  if   [ "$cur_ol" = "true" ] && [ "$cur_lm" = "true" ]; then bk_def='3'
+  elif [ "$cur_lm" = "true" ];                          then bk_def='2'
+  elif [ "$cur_ol" = "true" ];                          then bk_def='1'
+  else                                                       bk_def='4'; fi
+  printf '  Hub de modelos LLM locais a instalar no container:\n' >/dev/tty
+  printf '    1) Ollama\n' >/dev/tty
+  printf '    2) LM Studio (CLI lms + server OpenAI-compat na 1234)\n' >/dev/tty
+  printf '    3) Ambos\n' >/dev/tty
+  printf '    4) Nenhum (so modelos na nuvem: OpenRouter/AtlasCloud/etc.)\n' >/dev/tty
+  bk_choice="$(ask 'Qual instalar? (1/2/3/4)' "$bk_def")"
+  case "$bk_choice" in
+    2) set_env_var .env INSTALL_OLLAMA false; set_env_var .env INSTALL_LMSTUDIO true
+       info 'Marcado: LM Studio.' ;;
+    3) set_env_var .env INSTALL_OLLAMA true;  set_env_var .env INSTALL_LMSTUDIO true
+       info 'Marcado: Ollama + LM Studio.' ;;
+    4) set_env_var .env INSTALL_OLLAMA false; set_env_var .env INSTALL_LMSTUDIO false
+       info 'Marcado: nenhum backend local (somente modelos na nuvem).' ;;
+    *) set_env_var .env INSTALL_OLLAMA true;  set_env_var .env INSTALL_LMSTUDIO false
+       info 'Marcado: Ollama.' ;;
+  esac
 
   meta_default='n'; [ -n "$(get_env_var .env META_ACCESS_TOKEN)" ] && meta_default='y'
   if ask_yesno 'Vai usar o MCP de Meta Ads (campanhas/insights)?' "$meta_default"; then
@@ -488,6 +492,17 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
   else
     info 'media-editor pulado — preencha os B2_* no .env depois se precisar.'
   fi
+
+  # --- WhatsApp via Evolution Go (opcional) --------------------------------
+  # Sobe 2 containers extras: postgres + evolution-go. Quem NAO usa WhatsApp
+  # responde 'n' aqui — esses containers nao sobem (compose profile 'evolution'
+  # desligado via COMPOSE_PROFILES no .env) e todas as perguntas de WhatsApp
+  # abaixo (MinIO, agente, senha do Postgres, numeros, proxy) sao puladas.
+  wa_def='n'; [ "$(get_env_var .env INSTALL_EVOLUTION)" = "true" ] && wa_def='y'
+  if ask_yesno 'Vai usar o WhatsApp (Evolution Go)? Sobe Postgres + Evolution.' "$wa_def"; then
+  set_env_var .env INSTALL_EVOLUTION true
+  set_env_var .env COMPOSE_PROFILES evolution
+  info 'WhatsApp/Evolution habilitado (containers postgres + evolution-go vao subir).'
 
   # Storage S3/MinIO do Evolution p/ MIDIA RECEBIDA no WhatsApp (imagem/audio).
   # Opcional: sem isso o bridge baixa a midia on-demand (/message/downloadmedia).
@@ -567,6 +582,11 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
   else
     info 'Sem proxy no WhatsApp — preencha EVOLUTION_PROXY_* no .env depois se quiser.'
   fi
+  else
+    set_env_var .env INSTALL_EVOLUTION false
+    set_env_var .env COMPOSE_PROFILES ''
+    info 'WhatsApp/Evolution desabilitado — postgres e evolution-go NAO vao subir.'
+  fi
 elif [ "$FRESH_ENV" = "1" ]; then
   warn 'Sem terminal interativo — .env criado com defaults. Edite-o pra preencher Meta Ads / B2 / WhatsApp.'
 fi
@@ -592,17 +612,22 @@ EVOLUTION_API_KEY_VAL="$(get_env_var .env EVOLUTION_API_KEY)"
 EVOLUTION_INSTANCE_TOKEN_VAL="$(get_env_var .env EVOLUTION_INSTANCE_TOKEN)"
 POSTGRES_PASSWORD_VAL="$(get_env_var .env POSTGRES_PASSWORD)"
 
-# --- 6. normalizar entrypoint.sh para LF -----------------------------------
-step "Normalizando entrypoint.sh (LF)"
-if [ -f entrypoint.sh ]; then
-  if grep -q $'\r' entrypoint.sh 2>/dev/null; then
-    tmp="entrypoint.sh.tmp.$$"
-    tr -d '\r' < entrypoint.sh > "$tmp" && mv "$tmp" entrypoint.sh
-    info "CR removido do entrypoint.sh (corrige 'entrypoint not found' no Windows)."
-  else
-    info "entrypoint.sh ja' esta' em LF."
+# --- 6. normalizar scripts para LF -----------------------------------------
+# Scripts shell PRECISAM ser LF: com CRLF (checkout no Windows) o shebang vira
+# "#!/bin/sh\r" e o container falha com "not found" (entrypoint.sh nao sobe, ou
+# start-ollama/start-lmstudio/etc. quebram no boot). O .gitattributes forca LF
+# no checkout, mas arquivos ja' materializados com CRLF nao sao renormalizados
+# sozinhos — por isso limpamos o CR aqui, sempre, antes do build.
+step "Normalizando scripts para LF (evita 'not found' no Windows)"
+for f in entrypoint.sh scripts/*; do
+  [ -f "$f" ] || continue
+  if grep -q $'\r' "$f" 2>/dev/null; then
+    tmp="${f}.tmp.$$"
+    tr -d '\r' < "$f" > "$tmp" && mv "$tmp" "$f"
+    info "CR removido de $f"
   fi
-fi
+done
+info "scripts em LF (entrypoint.sh + scripts/*)."
 
 # --- 7. criar diretorios de dados ------------------------------------------
 step "Criando diretorios de dados"

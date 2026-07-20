@@ -4,6 +4,10 @@
 node_modules/
 *.zip
 
+# Override LOCAL do compose (ajustes por maquina: GPU, portas extras, etc.).
+# O docker-compose.yml e' o modelo versionado; este sobrepoe so' na maquina local.
+docker-compose.override.yml
+
 # openclaw.json da raiz e' a config real (copiada da VPS, contem secrets).
 # O template versionado fica em config/openclaw.json.
 /openclaw.json

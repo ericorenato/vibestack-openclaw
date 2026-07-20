@@ -133,6 +133,10 @@ services:
     # ao plano puro, troque por 'postgres:16' e remova os CREATE EXTENSION do init.
     image: ${EVOLUTION_PG_IMAGE:-pgvector/pgvector:pg16}
     restart: unless-stopped
+    # Profile 'evolution': postgres so' sobe se COMPOSE_PROFILES=evolution (o
+    # ./install.sh grava isso no .env quando o usuario opta pelo WhatsApp).
+    # Sem o profile, nem postgres nem evolution-go sobem.
+    profiles: ["evolution"]
     environment:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       # init SQL cria evogo_auth/evogo_users e habilita a extensao 'vector' em cada um.
@@ -142,7 +146,7 @@ services:
       # Cria os dois bancos + extensao vector no primeiro init (volume vazio).
       - ./postgres/init-evolution-dbs.sql:/docker-entrypoint-initdb.d/init-evolution-dbs.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -150,6 +154,8 @@ services:
   evolution-go:
     image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-go:latest}
     restart: unless-stopped
+    # Mesmo profile do postgres — WhatsApp e' opcional (ver ./install.sh).
+    profiles: ["evolution"]
     depends_on:
       postgres:
         condition: service_healthy

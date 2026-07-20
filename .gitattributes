@@ -4,3 +4,6 @@
 *.sh text eol=lf
 entrypoint.sh text eol=lf
 install.sh text eol=lf
+# Scripts sem extensao em scripts/ (start-ollama, start-lmstudio, models-status)
+# tambem PRECISAM ser LF — rodam no container Linux.
+scripts/* text eol=lf
