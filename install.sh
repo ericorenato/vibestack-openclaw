@@ -407,6 +407,31 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
   port="$(ask 'Porta do gateway OpenClaw' "$(get_env_var .env OPENCLAW_GATEWAY_PORT)")"
   set_env_var .env OPENCLAW_GATEWAY_PORT "$port"
 
+  # Plataforma(s) de agente a instalar (OpenClaw e/ou Hermes). Sao build args:
+  # builda-se SO' a(s) escolhida(s) — a outra nem entra na imagem (Dockerfile
+  # pula o clone/build). Trocar depois exige novo `docker compose build`.
+  # Idempotente: o default reflete o que ja' esta' no .env (Enter mantem).
+  cur_oc="$(get_env_var .env INSTALL_OPENCLAW)"; [ -z "$cur_oc" ] && cur_oc='true'
+  cur_hm="$(get_env_var .env INSTALL_HERMES)";   [ -z "$cur_hm" ] && cur_hm='true'
+  if   [ "$cur_oc" = "true" ] && [ "$cur_hm" = "true" ]; then pf_def='3'
+  elif [ "$cur_hm" = "true" ];                          then pf_def='2'
+  else                                                       pf_def='1'; fi
+  printf '  Plataforma(s) de agente a instalar:\n' >/dev/tty
+  printf '    1) OpenClaw (gateway 18789 + UI de controle)\n' >/dev/tty
+  printf '    2) Hermes (api_server 8642 + dashboard web 9119)\n' >/dev/tty
+  printf '    3) Ambos (OpenClaw principal + Hermes ao lado)\n' >/dev/tty
+  pf_choice="$(ask 'Qual instalar? (1/2/3)' "$pf_def")"
+  case "$pf_choice" in
+    1) set_env_var .env INSTALL_OPENCLAW true;  set_env_var .env INSTALL_HERMES false
+       set_env_var .env WA_BRIDGE_AGENT openclaw
+       info 'Marcado: OpenClaw (Hermes NAO sera instalado).' ;;
+    2) set_env_var .env INSTALL_OPENCLAW false; set_env_var .env INSTALL_HERMES true
+       set_env_var .env WA_BRIDGE_AGENT hermes
+       info 'Marcado: Hermes (OpenClaw NAO sera instalado).' ;;
+    *) set_env_var .env INSTALL_OPENCLAW true;  set_env_var .env INSTALL_HERMES true
+       info 'Marcado: OpenClaw + Hermes.' ;;
+  esac
+
   # Backends de modelos locais (Ollama / LM Studio). Sao build args: instala-se
   # SO' o escolhido, e o que for instalado SOBE no boot. Idempotente: o default
   # do menu reflete o que ja' esta no .env (Enter mantem). Adicionar o outro

@@ -5,6 +5,10 @@ services:
       context: .
       args:
         OPENCLAW_REF: ${OPENCLAW_REF:-main}
+        # Plataformas de agente — o ./install.sh pergunta qual instalar. Builda-se
+        # APENAS a(s) escolhida(s); a outra nem entra na imagem (Dockerfile pula).
+        INSTALL_OPENCLAW: ${INSTALL_OPENCLAW:-true}
+        INSTALL_HERMES: ${INSTALL_HERMES:-true}
         # Backends de modelos locais — o ./install.sh grava estes no .env.
         # Baixa-se APENAS o que estiver 'true'. O instalado sobe no boot.
         INSTALL_OLLAMA: ${INSTALL_OLLAMA:-true}
@@ -16,6 +20,9 @@ services:
       #- HOME=/root
       - NODE_ENV=production
       - TERM=xterm-256color
+      # Plataforma(s) instalada(s) — o entrypoint sobe so' o que existe na imagem.
+      - INSTALL_OPENCLAW=${INSTALL_OPENCLAW:-true}
+      - INSTALL_HERMES=${INSTALL_HERMES:-true}
       - OPENCLAW_GATEWAY_BIND=${OPENCLAW_GATEWAY_BIND}
       - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT}
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}

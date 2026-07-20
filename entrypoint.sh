@@ -5,6 +5,19 @@
 #  3) Executa o comando principal (compose passa 'openclaw gateway ...').
 set -e
 
+# --- Plataformas de agente instaladas (build args -> env) ------------------
+# O ./install.sh pergunta qual plataforma instalar (OpenClaw / Hermes / ambas)
+# e grava INSTALL_OPENCLAW / INSTALL_HERMES. O que nao foi instalado nem entra
+# na imagem (o Dockerfile pula o build) nem sobe aqui.
+INSTALL_OPENCLAW="${INSTALL_OPENCLAW:-true}"
+INSTALL_HERMES="${INSTALL_HERMES:-true}"
+
+# Coerencia do agente que responde o WhatsApp com o que foi instalado: se so'
+# uma plataforma existe, o bridge tem que apontar pra ela (senao 'hermes' default
+# tentaria um gateway inexistente).
+if [ "$INSTALL_HERMES" != "true" ]; then WA_BRIDGE_AGENT=openclaw; fi
+if [ "$INSTALL_OPENCLAW" != "true" ]; then WA_BRIDGE_AGENT=hermes; fi
+
 # --- Backends de modelos locais (sobe o que estiver instalado) -------------
 # O ./install.sh decide o que entra na imagem (build args INSTALL_OLLAMA /
 # INSTALL_LMSTUDIO). Aqui apenas detectamos o que foi baixado e subimos cada um:
@@ -27,6 +40,9 @@ set -e
 register_mcp() {
   name="$1"
   json="$2"
+  # So' registra no OpenClaw se ele estiver instalado (senao nao ha' binario
+  # `openclaw`). O Hermes tem seu proprio registro (config.yaml) mais abaixo.
+  [ "$INSTALL_OPENCLAW" = "true" ] || return 0
   if openclaw mcp set "$name" "$json" >/dev/null 2>&1; then
     echo "[entrypoint] mcp '$name' registrado"
   else
@@ -102,6 +118,7 @@ mkdir -p /root/.openclaw/workspace/_shared/assets /root/.openclaw/workspace/_sha
 # usando os MESMOS middlewares MCP (meta-ads, media-editor). O provider/modelo
 # NAO e' configurado aqui de proposito — o usuario edita config.yaml depois
 # (persistido no volume), igual faz com o openclaw.json.
+if [ "$INSTALL_HERMES" = "true" ]; then
 HERMES_HOME="${HOME:-/root}/.hermes"
 mkdir -p "$HERMES_HOME"
 
@@ -249,6 +266,9 @@ PYEOF
 # gateway do Hermes nao tem supervisor: se cair, ninguem reergue. Por isso o
 # envolvemos num laco de AUTO-RESTART (reinicia em 5s se sair). HERMES_ACCEPT_HOOKS=1
 # evita travar num prompt de hook sem TTY (canal headless, igual approvals=off).
+# Gateway do Hermes em BACKGROUND — so' quando o OpenClaw e' o processo principal
+# do container. No modo Hermes-only ele sobe em FOREGROUND no final (exec).
+if [ "$INSTALL_OPENCLAW" = "true" ]; then
 if [ -z "${API_SERVER_KEY:-}" ]; then
   echo "[entrypoint] AVISO: API_SERVER_KEY vazio — Hermes api_server NAO vai subir. Defina HERMES_API_SERVER_KEY no .env."
 else
@@ -274,6 +294,7 @@ else
   echo "[entrypoint] hermes gateway run (auto-restart) iniciado em 0.0.0.0:${HERMES_API_PORT:-8642} (pid=$HERMES_PID, log=/var/log/hermes.log)"
   echo "[entrypoint] LEMBRE: configure o provider/modelo do Hermes (docker exec -it <cont> hermes model) — o build nao baka provider."
 fi
+fi   # fim do gateway-em-background (so' com OpenClaw como principal)
 
 # Dashboard web do Hermes (Vite/React) — a "pagina web" de gestao/chat.
 # IMPORTANTE: bind em 127.0.0.1 (loopback) dentro do container, NAO 0.0.0.0.
@@ -301,8 +322,9 @@ socat \
   >/var/log/hermes-web-socat.log 2>&1 &
 HERMES_WEB_SOCAT_PID=$!
 echo "[entrypoint] socat bridge 0.0.0.0:$HERMES_WEB_PUBLIC_PORT -> 127.0.0.1:$HERMES_WEB_INTERNAL_PORT (pid=$HERMES_WEB_SOCAT_PID)"
+fi   # fim do bloco Hermes (INSTALL_HERMES=true)
 
-# --- Bridge inbound do WhatsApp (Evolution Go webhook -> Hermes -> resposta) ---
+# --- Bridge inbound do WhatsApp (Evolution Go webhook -> agente -> resposta) ---
 # Fecha o "canal": mensagens recebidas no WhatsApp viram prompts pro agente
 # Hermes (api_server na 8642), e a resposta volta pelo /send/text do Evolution.
 # Escuta em 0.0.0.0:WA_BRIDGE_PORT (so' rede interna do compose); o evolution-go
@@ -344,4 +366,24 @@ else
   echo "[entrypoint] whatsapp bridge NAO subiu (faltou EVOLUTION_INSTANCE_TOKEN, ou API_SERVER_KEY no modo hermes) — canal inbound desligado, envio via MCP segue ok."
 fi
 
-exec "$@"
+# --- Processo principal do container ---------------------------------------
+# OpenClaw instalado -> ele e' o foreground (exec do CMD do compose:
+# 'openclaw gateway ...'). Hermes-only -> o gateway do Hermes vira o principal.
+if [ "$INSTALL_OPENCLAW" = "true" ]; then
+  exec "$@"
+elif [ "$INSTALL_HERMES" = "true" ]; then
+  if [ -z "${API_SERVER_KEY:-}" ]; then
+    echo "[entrypoint] ERRO: API_SERVER_KEY vazio — Hermes api_server nao sobe. Defina HERMES_API_SERVER_KEY no .env."
+    exit 1
+  fi
+  HERMES_GATEWAY_PROFILE="${HERMES_GATEWAY_PROFILE:-default}"
+  echo "[entrypoint] hermes gateway run (FOREGROUND, processo principal) em 0.0.0.0:${HERMES_API_PORT:-8642}"
+  exec env HERMES_HOME="$HERMES_HOME" \
+           API_SERVER_HOST=0.0.0.0 \
+           API_SERVER_PORT="${HERMES_API_PORT:-8642}" \
+           HERMES_ACCEPT_HOOKS=1 \
+           hermes -p "$HERMES_GATEWAY_PROFILE" gateway run
+else
+  echo "[entrypoint] ERRO: nenhuma plataforma de agente instalada (INSTALL_OPENCLAW/INSTALL_HERMES ambos != true)."
+  exit 1
+fi

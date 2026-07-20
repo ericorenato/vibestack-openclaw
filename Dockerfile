@@ -119,20 +119,26 @@ RUN curl -fL "https://github.com/openclaw/wacli/releases/download/v${WACLI_VERSI
 
 WORKDIR /app
 
-# Clona o source do openclaw na versão escolhida (branch, tag ou commit leve)
-RUN git clone --depth 1 --branch "${OPENCLAW_REF}" "${OPENCLAW_REPO}" /tmp/openclaw \
- && cp -a /tmp/openclaw/. /app/ \
- && rm -rf /tmp/openclaw
-
-RUN corepack enable \
- && pnpm install --frozen-lockfile \
- && pnpm build \
- && pnpm ui:install \
- && pnpm ui:build
-
-# Wrapper para usar `openclaw <comando>` em vez de `node dist/index.js <comando>`
-RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/openclaw \
- && chmod +x /usr/local/bin/openclaw
+# ============================================================
+# OpenClaw — clone + build (CONDICIONAL: INSTALL_OPENCLAW).
+# Se o usuario escolheu Hermes-only no ./install.sh, este bloco inteiro e'
+# pulado (nao clona nem builda o OpenClaw — imagem menor, build mais rapido).
+# ============================================================
+ARG INSTALL_OPENCLAW=true
+RUN if [ "$INSTALL_OPENCLAW" = "true" ]; then \
+      git clone --depth 1 --branch "${OPENCLAW_REF}" "${OPENCLAW_REPO}" /tmp/openclaw \
+      && cp -a /tmp/openclaw/. /app/ \
+      && rm -rf /tmp/openclaw \
+      && corepack enable \
+      && pnpm install --frozen-lockfile \
+      && pnpm build \
+      && pnpm ui:install \
+      && pnpm ui:build \
+      && printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/openclaw \
+      && chmod +x /usr/local/bin/openclaw ; \
+    else \
+      echo "[build] INSTALL_OPENCLAW=$INSTALL_OPENCLAW -> pulando OpenClaw (clone+build)" ; \
+    fi
 
 # ============================================================
 # Hermes Agent — alternativa ao OpenClaw (NousResearch).
@@ -147,33 +153,29 @@ RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/ope
 ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
 ARG HERMES_REF=main
 
-RUN git clone --depth 1 --branch "${HERMES_REF}" "${HERMES_REPO}" /opt/hermes-agent
-
-# venv 3.11 (Hermes exige >=3.11; uv baixa inline) + instala tudo ([all]).
-RUN uv venv --python 3.11 /opt/hermes-agent/venv \
- && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache -e '/opt/hermes-agent[all]'
-
-# Playwright/Chromium (browser tool) — "instalar tudo". --with-deps puxa as
-# libs de sistema do Chromium via apt (roda como root no build, sem prompt).
-RUN cd /opt/hermes-agent && npx --yes playwright install --with-deps chromium
-
-# Pre-build do dashboard web (Vite/React) que o `hermes dashboard` serve na 9119.
-# Compila pra hermes_cli/web_dist (mesmo comando do erro de --skip-build do
-# Hermes). Assim o entrypoint sobe a UI rapido; sem isso ele compilaria a cada
-# boot. Se a UI nao precisar rebuild, o helper interno do Hermes pula sozinho.
-RUN cd /opt/hermes-agent/web && npm install && npm run build
-
-# Pre-build do TUI (ui-tui) que a aba "Chat" do dashboard spawna via `hermes --tui`.
-# Sem isso, o 1o `hermes --tui` (inclusive o que a aba Chat dispara) faz npm
-# install + build em runtime — o que derruba o WebSocket do chat por timeout/erro.
-# Gera ui-tui/dist/entry.js; em runtime o Hermes detecta que ja' esta' buildado e pula.
-RUN cd /opt/hermes-agent/ui-tui && npm install && npm run build
-
-# Wrapper: limpa PYTHONPATH/PYTHONHOME (igual ao install.sh oficial, pra nao
-# herdar o venv do middleware/uv) e exec o hermes do venv do Hermes.
-RUN printf '#!/usr/bin/env bash\nunset PYTHONPATH PYTHONHOME\nexec /opt/hermes-agent/venv/bin/hermes "$@"\n' \
-      > /usr/local/bin/hermes \
- && chmod +x /usr/local/bin/hermes
+# ============================================================
+# Hermes — clone + venv + playwright + builds (CONDICIONAL: INSTALL_HERMES).
+# Se o usuario escolheu OpenClaw-only no ./install.sh, este bloco inteiro e'
+# pulado. E' o maior peso da imagem (Chromium do Playwright + builds npm do
+# dashboard/TUI), entao pular deixa a imagem BEM menor e o build mais rapido.
+#   - venv 3.11 + extra [all] (browser, mcp, messaging...).
+#   - playwright --with-deps chromium (browser tool).
+#   - pre-build do dashboard web (9119) e do ui-tui (aba Chat) p/ nao compilar no boot.
+#   - wrapper `hermes` que limpa PYTHONPATH/PYTHONHOME e exec o binario do venv.
+# ============================================================
+ARG INSTALL_HERMES=true
+RUN if [ "$INSTALL_HERMES" = "true" ]; then \
+      git clone --depth 1 --branch "${HERMES_REF}" "${HERMES_REPO}" /opt/hermes-agent \
+      && uv venv --python 3.11 /opt/hermes-agent/venv \
+      && VIRTUAL_ENV=/opt/hermes-agent/venv uv pip install --no-cache -e '/opt/hermes-agent[all]' \
+      && (cd /opt/hermes-agent && npx --yes playwright install --with-deps chromium) \
+      && (cd /opt/hermes-agent/web && npm install && npm run build) \
+      && (cd /opt/hermes-agent/ui-tui && npm install && npm run build) \
+      && printf '#!/usr/bin/env bash\nunset PYTHONPATH PYTHONHOME\nexec /opt/hermes-agent/venv/bin/hermes "$@"\n' > /usr/local/bin/hermes \
+      && chmod +x /usr/local/bin/hermes ; \
+    else \
+      echo "[build] INSTALL_HERMES=$INSTALL_HERMES -> pulando Hermes (clone+venv+playwright+builds)" ; \
+    fi
 
 # Middleware MCP que envelopa a CLI 'meta' como tools tipados para o openclaw.
 COPY middleware /app/middleware
