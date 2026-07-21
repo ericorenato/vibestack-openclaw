@@ -26,6 +26,10 @@ services:
       - OPENCLAW_GATEWAY_BIND=${OPENCLAW_GATEWAY_BIND}
       - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT}
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      # Timeout de publicacao do prepared model runtime (30s hardcoded no upstream).
+      # Com varios agentes o boot estoura e o gateway nunca fica ready; o entrypoint
+      # aplica esse valor por patch no /app/dist antes de subir o gateway.
+      - OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS=${OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS:-120000}
       - GOG_KEYRING_PASSWORD=${GOG_KEYRING_PASSWORD}
       - OLLAMA_MODELS=/var/lib/ollama
       # Meta Ads CLI oficial le ACCESS_TOKEN/AD_ACCOUNT_ID; mantemos META_ACCESS_TOKEN

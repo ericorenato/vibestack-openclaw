@@ -398,6 +398,14 @@ for pair in "OPENCLAW_DATA_DIR=$OPENCLAW_DATA_DIR_VAL" "OLLAMA_DATA_DIR=$OLLAMA_
   esac
 done
 
+# Backfill de chaves novas em .env antigos (quem instalou antes delas existirem).
+# Sem OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS o compose usa o default :-120000,
+# mas gravamos no .env pra ficar visivel/editavel pelo aluno.
+if [ -z "$(get_env_var .env OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS)" ]; then
+  set_env_var .env OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS 120000
+  info 'OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS definido como 120000 (boot com varios agentes)'
+fi
+
 # --- 4b. perguntas interativas (.env novo OU reconfigurando, com terminal) -
 # Os defaults [entre colchetes] vem do valor ATUAL do .env, entao Enter mantem
 # (vale tanto pro .env recem-criado do exemplo quanto pra reconfiguracao).

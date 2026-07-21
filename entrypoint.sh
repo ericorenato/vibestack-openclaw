@@ -366,6 +366,53 @@ else
   echo "[entrypoint] whatsapp bridge NAO subiu (faltou EVOLUTION_INSTANCE_TOKEN, ou API_SERVER_KEY no modo hermes) — canal inbound desligado, envio via MCP segue ok."
 fi
 
+# --- Patch: timeout de publicacao do "prepared model runtime" -------------
+# O OpenClaw 2026.7.x traz DEFAULT_MODEL_RUNTIME_BUILD_TIMEOUT_MS = 3e4 (30s)
+# hardcoded no bundle e NAO le nenhuma env pra isso. Com varios agentes
+# (openclaw agents add) o build/publish de cada runtime passa de 30s — sobretudo
+# em Docker Desktop/WSL — e o gateway morre com:
+#   prepared model runtime publication timed out
+# ...antes de chegar em "[gateway] ready", escondendo todos os agentes da TUI.
+# Reescrevemos a constante no dist a cada boot (o dist vive na imagem, nao em
+# volume, entao o patch some no rebuild e e' reaplicado aqui). So' faz sentido
+# quando o OpenClaw esta' instalado (e' quem tem /app/dist).
+patch_model_runtime_timeout() {
+  ms="${OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS:-120000}"
+  case "$ms" in
+    ''|*[!0-9]*)
+      echo "[entrypoint] AVISO: OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS='$ms' nao e' inteiro — patch ignorado"
+      return 0 ;;
+  esac
+
+  # Chunk com nome hasheado (prepared-model-runtime-XXXX.js). Se o hash mudar de
+  # versao e o glob falhar, cai no grep pelo simbolo em todo o dist.
+  files=""
+  for f in /app/dist/prepared-model-runtime-*.js; do
+    [ -f "$f" ] && files="${files} $f"
+  done
+  if [ -z "$files" ]; then
+    files="$(grep -rl 'DEFAULT_MODEL_RUNTIME_BUILD_TIMEOUT_MS' /app/dist 2>/dev/null || true)"
+  fi
+  if [ -z "$files" ]; then
+    echo "[entrypoint] AVISO: DEFAULT_MODEL_RUNTIME_BUILD_TIMEOUT_MS nao encontrado no /app/dist — upstream mudou? patch pulado"
+    return 0
+  fi
+
+  for f in $files; do
+    grep -q 'DEFAULT_MODEL_RUNTIME_BUILD_TIMEOUT_MS' "$f" 2>/dev/null || continue
+    if grep -qE "DEFAULT_MODEL_RUNTIME_BUILD_TIMEOUT_MS[[:space:]]*=[[:space:]]*${ms}[;,]" "$f"; then
+      echo "[entrypoint] model runtime timeout ja' em ${ms}ms ($f)"
+      continue
+    fi
+    if sed -i -E "s/(DEFAULT_MODEL_RUNTIME_BUILD_TIMEOUT_MS[[:space:]]*=[[:space:]]*)[0-9]+(\.[0-9]+)?([eE]\+?[0-9]+)?/\1${ms}/" "$f" 2>/dev/null; then
+      echo "[entrypoint] model runtime timeout -> ${ms}ms ($f)"
+    else
+      echo "[entrypoint] AVISO: falha ao patchar $f (readonly?) — gateway pode falhar com varios agentes"
+    fi
+  done
+}
+[ "$INSTALL_OPENCLAW" = "true" ] && { patch_model_runtime_timeout || true; }
+
 # --- Processo principal do container ---------------------------------------
 # OpenClaw instalado -> ele e' o foreground (exec do CMD do compose:
 # 'openclaw gateway ...'). Hermes-only -> o gateway do Hermes vira o principal.

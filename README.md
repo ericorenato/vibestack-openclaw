@@ -591,7 +591,10 @@ docker compose build
 docker compose up -d --force-recreate openclaw-vibestack
 ```
 
-(O `docker compose build` só é necessário se o `Dockerfile` ou a pasta `middleware/` mudaram.)
+(O `docker compose build` só é necessário se o `Dockerfile`, o `entrypoint.sh` ou a
+pasta `middleware/` mudaram. Um `git pull` que só toca `.env.example`/`docker-compose.yml`
+dispensa rebuild. Atenção: correções que patcham o `/app/dist` no boot — como o timeout
+do model runtime — vivem no `entrypoint.sh` e **só valem após rebuild**, não com `git pull` sozinho.)
 
 Pra atualizar a versão do openclaw upstream, edita no `.env`:
 
@@ -1168,6 +1171,25 @@ Falta de RAM. Aumenta swap (`fallocate -l 4G /swapfile && chmod 600 /swapfile &&
 ```bash
 sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
 systemctl restart ssh
+```
+
+### Gateway não sobe: `prepared model runtime publication timed out`
+
+Acontece quando você tem vários agentes (`openclaw agents add`) e some se você
+deixa só o `main`. Não é porta, nem OpenRouter, nem Ollama: o OpenClaw 2026.7.x
+tem 30 s hardcoded (`DEFAULT_MODEL_RUNTIME_BUILD_TIMEOUT_MS = 3e4`) para publicar
+o runtime de modelo de cada agente no boot. Com 7 agentes — em Docker Desktop/WSL
+especialmente — o processo passa de 30 s e o gateway morre antes do `[gateway] ready`,
+deixando a TUI sem nenhum agente.
+
+O `entrypoint.sh` já corrige isso: a cada boot ele reescreve a constante no
+`/app/dist/prepared-model-runtime-*.js` usando `OPENCLAW_MODEL_RUNTIME_BUILD_TIMEOUT_MS`
+(default `120000`). A versão não lê essa env sozinha — por isso o patch. Se ainda
+estourar, aumente o valor no `.env` e recrie:
+
+```bash
+docker compose up -d --force-recreate openclaw-vibestack
+docker compose logs openclaw-vibestack | grep "model runtime timeout"
 ```
 
 ### Porta 18789 em uso na VPS
